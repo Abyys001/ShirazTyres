@@ -1,0 +1,9 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+node_modules/
+.next/
+staticfiles/
+db.sqlite3
+.playwright-mcp/

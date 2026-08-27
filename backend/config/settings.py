@@ -1,0 +1,204 @@
+from datetime import timedelta
+from pathlib import Path
+
+from .env import env, env_bool, env_int, env_list
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = env("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
+DEBUG = env_bool("DJANGO_DEBUG", True)
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend")
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",
+    "django_filters",
+    "corsheaders",
+    "drf_spectacular",
+    "apps.accounts",
+    "apps.vehicles",
+    "apps.bookings",
+    "apps.notifications",
+]
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+WSGI_APPLICATION = "config.wsgi.application"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+if env_bool("USE_SQLITE", False):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB", "shiraztyres"),
+            "USER": env("POSTGRES_USER", "shiraztyres"),
+            "PASSWORD": env("POSTGRES_PASSWORD", "shiraztyres"),
+            "HOST": env("POSTGRES_HOST", "db"),
+            "PORT": env_int("POSTGRES_PORT", 5432),
+        }
+    }
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL", "redis://redis:6379/1"),
+    }
+    if not env_bool("USE_SQLITE", False)
+    else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+}
+
+AUTH_USER_MODEL = "accounts.StaffUser"
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+LANGUAGE_CODE = "en-gb"
+TIME_ZONE = "Europe/London"
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "apps.accounts.authentication.StaffJWTAuthentication",
+        "apps.accounts.authentication.DriverJWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+        "rest_framework.filters.SearchFilter",
+    ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 25,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.ScopedRateThrottle",),
+    "DEFAULT_THROTTLE_RATES": {
+        "otp_request": env("THROTTLE_OTP_REQUEST", "5/hour"),
+        "otp_verify": env("THROTTLE_OTP_VERIFY", "10/hour"),
+        "vehicle_lookup": env("THROTTLE_VEHICLE_LOOKUP", "30/hour"),
+        "booking_create": env("THROTTLE_BOOKING_CREATE", "10/hour"),
+    },
+    "EXCEPTION_HANDLER": "config.exceptions.api_exception_handler",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "ShirazTyres API",
+    "DESCRIPTION": "Emergency tyre callout platform — website, admin panel and mobile app.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MINUTES", 30)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 30)),
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")
+
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# --- OTP -------------------------------------------------------------------
+OTP_CODE_LENGTH = env_int("OTP_CODE_LENGTH", 6)
+OTP_TTL_SECONDS = env_int("OTP_TTL_SECONDS", 300)
+OTP_MAX_ATTEMPTS = env_int("OTP_MAX_ATTEMPTS", 5)
+OTP_RESEND_COOLDOWN_SECONDS = env_int("OTP_RESEND_COOLDOWN_SECONDS", 60)
+
+# --- Providers -------------------------------------------------------------
+SMS_PROVIDER = env("SMS_PROVIDER", "mock")  # mock | twilio
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = env("TWILIO_FROM_NUMBER", "")
+
+PUSH_PROVIDER = env("PUSH_PROVIDER", "mock")  # mock | fcm
+FCM_PROJECT_ID = env("FCM_PROJECT_ID", "")
+FCM_CREDENTIALS_FILE = env("FCM_CREDENTIALS_FILE", "")
+
+VEHICLE_LOOKUP_MOCK = env_bool("VEHICLE_LOOKUP_MOCK", True)
+DVLA_VES_URL = env("DVLA_VES_URL", "https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles")
+DVLA_API_KEY = env("DVLA_API_KEY", "")
+TYRE_API_URL = env("TYRE_API_URL", "https://uk1.ukvehicledata.co.uk/api/datapackage/TyreData")
+TYRE_API_KEY = env("TYRE_API_KEY", "")
+VEHICLE_LOOKUP_TTL_DAYS = env_int("VEHICLE_LOOKUP_TTL_DAYS", 30)
+EXTERNAL_HTTP_TIMEOUT = env_int("EXTERNAL_HTTP_TIMEOUT", 10)
+
+# --- Shop notification targets --------------------------------------------
+SHOP_NOTIFY_SMS = env_list("SHOP_NOTIFY_SMS", "")
+SHOP_NOTIFY_EMAIL = env_list("SHOP_NOTIFY_EMAIL", "")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "no-reply@shiraztyres.co.uk")
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = env("EMAIL_HOST", "")
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+
+PANEL_BASE_URL = env("PANEL_BASE_URL", "http://localhost:3000")
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
+    SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"simple": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "simple"}},
+    "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
+}

@@ -1,0 +1,2632 @@
+openapi: 3.0.3
+info:
+  title: ShirazTyres API
+  version: 1.0.0
+  description: Emergency tyre callout platform — website, admin panel and mobile app.
+paths:
+  /api/v1/auth/driver/refresh:
+    post:
+      operationId: auth_driver_refresh_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/otp/request:
+    post:
+      operationId: auth_otp_request_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/auth/otp/verify:
+    post:
+      operationId: auth_otp_verify_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerify'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OtpVerify'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OtpVerify'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/staff/login:
+    post:
+      operationId: auth_staff_login_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffLogin'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffLogin'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffLogin'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/staff/me:
+    get:
+      operationId: auth_staff_me_retrieve
+      tags:
+      - auth
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffUser'
+          description: ''
+  /api/v1/auth/staff/refresh:
+    post:
+      operationId: auth_staff_refresh_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Refresh'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/bookings:
+    get:
+      operationId: bookings_list
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      parameters:
+      - in: query
+        name: assigned_to
+        schema:
+          type: integer
+      - in: query
+        name: created_after
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: created_before
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: issue_type
+        schema:
+          type: string
+          enum:
+          - blowout
+          - other
+          - puncture
+          - tyre_damage
+          - wheel_change
+        description: |-
+          * `puncture` - Puncture
+          * `blowout` - Blowout
+          * `tyre_damage` - Tyre damage
+          * `wheel_change` - Wheel change
+          * `other` - Other
+      - in: query
+        name: open_only
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: source
+        schema:
+          type: string
+          enum:
+          - app
+          - panel
+          - phone
+          - website
+        description: |-
+          * `website` - Website
+          * `app` - Mobile app
+          * `panel` - Admin panel
+          * `phone` - Phone call
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - assigned
+            - cancelled
+            - completed
+            - in_progress
+            - received
+        description: |-
+          * `received` - Received
+          * `assigned` - Assigned
+          * `in_progress` - In progress
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+        explode: true
+        style: form
+      tags:
+      - bookings
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBookingList'
+          description: ''
+    post:
+      operationId: bookings_create
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      tags:
+      - bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingCreate'
+          description: ''
+  /api/v1/bookings/{id}:
+    get:
+      operationId: bookings_retrieve
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this booking.
+        required: true
+      tags:
+      - bookings
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetail'
+          description: ''
+    patch:
+      operationId: bookings_partial_update
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this booking.
+        required: true
+      tags:
+      - bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStaffUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStaffUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStaffUpdate'
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingStaffUpdate'
+          description: ''
+  /api/v1/bookings/{id}/status:
+    patch:
+      operationId: bookings_status_partial_update
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this booking.
+        required: true
+      tags:
+      - bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStatusUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStatusUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBookingStatusUpdate'
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetail'
+          description: ''
+  /api/v1/bookings/stats:
+    get:
+      operationId: bookings_stats_retrieve
+      description: 'The panel''s main surface: list, detail, manual creation, status
+        changes.'
+      tags:
+      - bookings
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingStats'
+          description: ''
+  /api/v1/devices:
+    post:
+      operationId: devices_create
+      description: Registered by the Flutter app and by the panel for web push.
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceToken'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceToken'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceToken'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceToken'
+          description: ''
+    delete:
+      operationId: devices_destroy
+      description: Registered by the Flutter app and by the panel for web push.
+      tags:
+      - notifications
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceToken'
+          description: ''
+  /api/v1/drivers:
+    get:
+      operationId: drivers_list
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: is_phone_verified
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - drivers
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDriverList'
+          description: ''
+    post:
+      operationId: drivers_create
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      tags:
+      - drivers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Driver'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Driver'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Driver'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+          description: ''
+  /api/v1/drivers/{id}:
+    get:
+      operationId: drivers_retrieve
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver.
+        required: true
+      tags:
+      - drivers
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+          description: ''
+    put:
+      operationId: drivers_update
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver.
+        required: true
+      tags:
+      - drivers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Driver'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Driver'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Driver'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+          description: ''
+    patch:
+      operationId: drivers_partial_update
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver.
+        required: true
+      tags:
+      - drivers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDriver'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDriver'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDriver'
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+          description: ''
+    delete:
+      operationId: drivers_destroy
+      description: Staff-side driver management — the 'shop can add drivers' half
+        of the brief.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver.
+        required: true
+      tags:
+      - drivers
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/drivers/{id}/send-login-code:
+    post:
+      operationId: drivers_send_login_code_create
+      description: Staff-added drivers get a code so they can claim the account from
+        the app.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver.
+        required: true
+      tags:
+      - drivers
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/drivers/me:
+    get:
+      operationId: drivers_me_retrieve
+      tags:
+      - drivers
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSelf'
+          description: ''
+    patch:
+      operationId: drivers_me_partial_update
+      tags:
+      - drivers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverSelf'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverSelf'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverSelf'
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSelf'
+          description: ''
+  /api/v1/my-vehicles:
+    get:
+      operationId: my_vehicles_list
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDriverVehicleList'
+          description: ''
+    post:
+      operationId: my_vehicles_create
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      tags:
+      - vehicles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverVehicle'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DriverVehicle'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DriverVehicle'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverVehicle'
+          description: ''
+  /api/v1/my-vehicles/{id}:
+    get:
+      operationId: my_vehicles_retrieve
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver vehicle.
+        required: true
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverVehicle'
+          description: ''
+    patch:
+      operationId: my_vehicles_partial_update
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver vehicle.
+        required: true
+      tags:
+      - vehicles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverVehicle'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverVehicle'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDriverVehicle'
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverVehicle'
+          description: ''
+    delete:
+      operationId: my_vehicles_destroy
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver vehicle.
+        required: true
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/my-vehicles/{id}/confirm-tyre:
+    post:
+      operationId: my_vehicles_confirm_tyre_create
+      description: A driver's saved vehicles — 'my car' in the app, so a callout is
+        two taps.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver vehicle.
+        required: true
+      tags:
+      - vehicles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
+  /api/v1/my/bookings:
+    get:
+      operationId: my_bookings_list
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - bookings
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDriverBookingList'
+          description: ''
+  /api/v1/my/bookings/{id}:
+    get:
+      operationId: my_bookings_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - bookings
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverBookingDetail'
+          description: ''
+  /api/v1/my/bookings/create:
+    post:
+      operationId: my_bookings_create_create
+      description: 'App flow: the driver is already authenticated, so no second OTP.'
+      tags:
+      - bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetail'
+          description: ''
+  /api/v1/notifications:
+    get:
+      operationId: notifications_list
+      description: Lets the owner answer 'did the alert actually go out?' without
+        a shell.
+      parameters:
+      - in: query
+        name: booking
+        schema:
+          type: integer
+      - in: query
+        name: channel
+        schema:
+          type: string
+          enum:
+          - email
+          - push
+          - sms
+        description: |-
+          * `sms` - SMS
+          * `email` - Email
+          * `push` - Push
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - failed
+          - pending
+          - sent
+        description: |-
+          * `pending` - Pending
+          * `sent` - Sent
+          * `failed` - Failed
+      tags:
+      - notifications
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /api/v1/public/bookings:
+    post:
+      operationId: public_bookings_create
+      description: 'Website flow: no account needed, but the phone number is proved
+        with an OTP first.'
+      tags:
+      - bookings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetail'
+          description: ''
+  /api/v1/vehicle-lookup/{plate}:
+    get:
+      operationId: vehicle_lookup_retrieve
+      description: Public plate lookup — the website widget and the app both call
+        this.
+      parameters:
+      - in: path
+        name: plate
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: refresh
+        schema:
+          type: boolean
+        description: Bypass the cached record.
+      tags:
+      - vehicles
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
+  /api/v1/vehicles:
+    get:
+      operationId: vehicles_list
+      description: Staff-side vehicle browser plus the manual tyre-size override.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVehicleList'
+          description: ''
+  /api/v1/vehicles/{plate}:
+    get:
+      operationId: vehicles_retrieve
+      description: Staff-side vehicle browser plus the manual tyre-size override.
+      parameters:
+      - in: path
+        name: plate
+        schema:
+          type: string
+        required: true
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
+  /api/v1/vehicles/{plate}/confirm-tyre:
+    post:
+      operationId: vehicles_confirm_tyre_create
+      description: Staff-side vehicle browser plus the manual tyre-size override.
+      parameters:
+      - in: path
+        name: plate
+        schema:
+          type: string
+        required: true
+      tags:
+      - vehicles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TyreConfirm'
+        required: true
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
+  /api/v1/vehicles/{plate}/refresh:
+    post:
+      operationId: vehicles_refresh_create
+      description: Staff-side vehicle browser plus the manual tyre-size override.
+      parameters:
+      - in: path
+        name: plate
+        schema:
+          type: string
+        required: true
+      tags:
+      - vehicles
+      security:
+      - staffJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
+components:
+  schemas:
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        driver_id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        contact_email:
+          type: string
+          format: email
+          readOnly: true
+        issue_type:
+          allOf:
+          - $ref: '#/components/schemas/IssueTypeEnum'
+          readOnly: true
+        issue_display:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        tyre_size:
+          type: string
+          readOnly: true
+          description: Snapshot at the time of the call-out.
+        location_text:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD51Enum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        assigned_to:
+          allOf:
+          - $ref: '#/components/schemas/StaffUser'
+          readOnly: true
+        internal_notes:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        maps_url:
+          type: string
+          readOnly: true
+      required:
+      - assigned_at
+      - assigned_to
+      - completed_at
+      - contact_email
+      - contact_name
+      - contact_phone
+      - created_at
+      - description
+      - driver_id
+      - id
+      - internal_notes
+      - issue_display
+      - issue_type
+      - latitude
+      - location_text
+      - longitude
+      - maps_url
+      - plate
+      - reference
+      - source
+      - status
+      - status_display
+      - tyre_size
+      - updated_at
+      - vehicle
+    BookingCreate:
+      type: object
+      description: Shared by website, app and panel — ``source`` and the actor differ,
+        the payload doesn't.
+      properties:
+        plate:
+          type: string
+          maxLength: 16
+        contact_name:
+          type: string
+          maxLength: 120
+        contact_phone:
+          type: string
+          maxLength: 20
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        issue_type:
+          $ref: '#/components/schemas/IssueTypeEnum'
+        description:
+          type: string
+        tyre_size:
+          type: string
+          description: Snapshot at the time of the call-out.
+          maxLength: 32
+        location_text:
+          type: string
+          maxLength: 255
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+      required:
+      - contact_name
+      - contact_phone
+      - location_text
+    BookingDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        driver_id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        contact_email:
+          type: string
+          format: email
+          readOnly: true
+        issue_type:
+          allOf:
+          - $ref: '#/components/schemas/IssueTypeEnum'
+          readOnly: true
+        issue_display:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        tyre_size:
+          type: string
+          readOnly: true
+          description: Snapshot at the time of the call-out.
+        location_text:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD51Enum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        assigned_to:
+          allOf:
+          - $ref: '#/components/schemas/StaffUser'
+          readOnly: true
+        internal_notes:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        maps_url:
+          type: string
+          readOnly: true
+        status_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingStatusEvent'
+          readOnly: true
+      required:
+      - assigned_at
+      - assigned_to
+      - completed_at
+      - contact_email
+      - contact_name
+      - contact_phone
+      - created_at
+      - description
+      - driver_id
+      - id
+      - internal_notes
+      - issue_display
+      - issue_type
+      - latitude
+      - location_text
+      - longitude
+      - maps_url
+      - plate
+      - reference
+      - source
+      - status
+      - status_display
+      - status_events
+      - tyre_size
+      - updated_at
+      - vehicle
+    BookingStaffUpdate:
+      type: object
+      properties:
+        contact_name:
+          type: string
+          maxLength: 120
+        contact_phone:
+          type: string
+          maxLength: 20
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        issue_type:
+          $ref: '#/components/schemas/IssueTypeEnum'
+        description:
+          type: string
+        tyre_size:
+          type: string
+          description: Snapshot at the time of the call-out.
+          maxLength: 32
+        location_text:
+          type: string
+          maxLength: 255
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        internal_notes:
+          type: string
+      required:
+      - contact_name
+      - contact_phone
+      - location_text
+    BookingStats:
+      type: object
+      properties:
+        received:
+          type: integer
+        assigned:
+          type: integer
+        in_progress:
+          type: integer
+        completed_today:
+          type: integer
+        open_total:
+          type: integer
+      required:
+      - assigned
+      - completed_today
+      - in_progress
+      - open_total
+      - received
+    BookingStatusEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        from_status:
+          type: string
+          maxLength: 16
+        to_status:
+          type: string
+          maxLength: 16
+        note:
+          type: string
+          maxLength: 255
+        changed_by_name:
+          type: string
+          readOnly: true
+          default: ''
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - changed_by_name
+      - created_at
+      - id
+      - to_status
+    ChannelEnum:
+      enum:
+      - sms
+      - email
+      - push
+      type: string
+      description: |-
+        * `sms` - SMS
+        * `email` - Email
+        * `push` - Push
+    DeviceToken:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        token:
+          type: string
+          maxLength: 255
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_active
+      - platform
+      - token
+    Driver:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        phone:
+          type: string
+          maxLength: 32
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_phone_verified:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+        notes:
+          type: string
+          description: Internal notes, visible to staff only.
+        vehicle_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - id
+      - is_phone_verified
+      - last_login_at
+      - phone
+      - updated_at
+      - vehicle_count
+    DriverBooking:
+      type: object
+      description: What the driver's own app may see — internal notes and staff assignment
+        stay in the panel.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        driver_id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        contact_email:
+          type: string
+          format: email
+          readOnly: true
+        issue_type:
+          allOf:
+          - $ref: '#/components/schemas/IssueTypeEnum'
+          readOnly: true
+        issue_display:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        tyre_size:
+          type: string
+          readOnly: true
+          description: Snapshot at the time of the call-out.
+        location_text:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD51Enum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        maps_url:
+          type: string
+          readOnly: true
+      required:
+      - assigned_at
+      - completed_at
+      - contact_email
+      - contact_name
+      - contact_phone
+      - created_at
+      - description
+      - driver_id
+      - id
+      - issue_display
+      - issue_type
+      - latitude
+      - location_text
+      - longitude
+      - maps_url
+      - plate
+      - reference
+      - source
+      - status
+      - status_display
+      - tyre_size
+      - updated_at
+      - vehicle
+    DriverBookingDetail:
+      type: object
+      description: What the driver's own app may see — internal notes and staff assignment
+        stay in the panel.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        driver_id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        contact_email:
+          type: string
+          format: email
+          readOnly: true
+        issue_type:
+          allOf:
+          - $ref: '#/components/schemas/IssueTypeEnum'
+          readOnly: true
+        issue_display:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        tyre_size:
+          type: string
+          readOnly: true
+          description: Snapshot at the time of the call-out.
+        location_text:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD51Enum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        maps_url:
+          type: string
+          readOnly: true
+        status_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingStatusEvent'
+          readOnly: true
+      required:
+      - assigned_at
+      - completed_at
+      - contact_email
+      - contact_name
+      - contact_phone
+      - created_at
+      - description
+      - driver_id
+      - id
+      - issue_display
+      - issue_type
+      - latitude
+      - location_text
+      - longitude
+      - maps_url
+      - plate
+      - reference
+      - source
+      - status
+      - status_display
+      - status_events
+      - tyre_size
+      - updated_at
+      - vehicle
+    DriverSelf:
+      type: object
+      description: Drivers may edit their own name/email but never their notes or
+        active flag.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        phone:
+          type: string
+          maxLength: 32
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_phone_verified:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+          description: Internal notes, visible to staff only.
+        vehicle_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - id
+      - is_active
+      - is_phone_verified
+      - last_login_at
+      - notes
+      - phone
+      - updated_at
+      - vehicle_count
+    DriverVehicle:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          writeOnly: true
+          maxLength: 16
+        nickname:
+          type: string
+          maxLength: 64
+        is_primary:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - plate
+      - vehicle
+    IssueTypeEnum:
+      enum:
+      - puncture
+      - blowout
+      - tyre_damage
+      - wheel_change
+      - other
+      type: string
+      description: |-
+        * `puncture` - Puncture
+        * `blowout` - Blowout
+        * `tyre_damage` - Tyre damage
+        * `wheel_change` - Wheel change
+        * `other` - Other
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        booking:
+          type: integer
+          readOnly: true
+          nullable: true
+        booking_reference:
+          type: string
+          readOnly: true
+          default: ''
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/ChannelEnum'
+          readOnly: true
+        recipient:
+          type: string
+          readOnly: true
+        subject:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/NotificationStatusEnum'
+          readOnly: true
+        error:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        sent_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - booking
+      - booking_reference
+      - channel
+      - created_at
+      - error
+      - id
+      - recipient
+      - sent_at
+      - status
+      - subject
+    NotificationStatusEnum:
+      enum:
+      - pending
+      - sent
+      - failed
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `sent` - Sent
+        * `failed` - Failed
+    OtpRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+        purpose:
+          allOf:
+          - $ref: '#/components/schemas/PurposeEnum'
+          default: login
+      required:
+      - phone
+    OtpVerify:
+      type: object
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+        code:
+          type: string
+          maxLength: 12
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+      required:
+      - code
+      - phone
+    PaginatedBookingList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+    PaginatedDriverBookingList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverBooking'
+    PaginatedDriverList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Driver'
+    PaginatedDriverVehicleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverVehicle'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    PaginatedVehicleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vehicle'
+    PatchedBookingStaffUpdate:
+      type: object
+      properties:
+        contact_name:
+          type: string
+          maxLength: 120
+        contact_phone:
+          type: string
+          maxLength: 20
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        issue_type:
+          $ref: '#/components/schemas/IssueTypeEnum'
+        description:
+          type: string
+        tyre_size:
+          type: string
+          description: Snapshot at the time of the call-out.
+          maxLength: 32
+        location_text:
+          type: string
+          maxLength: 255
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        internal_notes:
+          type: string
+    PatchedBookingStatusUpdate:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusD51Enum'
+        note:
+          type: string
+          maxLength: 255
+        assigned_to_id:
+          type: integer
+          nullable: true
+    PatchedDriver:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        phone:
+          type: string
+          maxLength: 32
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_phone_verified:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+        notes:
+          type: string
+          description: Internal notes, visible to staff only.
+        vehicle_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+    PatchedDriverSelf:
+      type: object
+      description: Drivers may edit their own name/email but never their notes or
+        active flag.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        phone:
+          type: string
+          maxLength: 32
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_phone_verified:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+          description: Internal notes, visible to staff only.
+        vehicle_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+    PatchedDriverVehicle:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        vehicle:
+          allOf:
+          - $ref: '#/components/schemas/Vehicle'
+          readOnly: true
+        plate:
+          type: string
+          writeOnly: true
+          maxLength: 16
+        nickname:
+          type: string
+          maxLength: 64
+        is_primary:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PlatformEnum:
+      enum:
+      - android
+      - ios
+      - web
+      type: string
+      description: |-
+        * `android` - Android
+        * `ios` - iOS
+        * `web` - Web
+    PurposeEnum:
+      enum:
+      - login
+      - booking
+      type: string
+      description: |-
+        * `login` - Login or registration
+        * `booking` - Confirm emergency request
+    Refresh:
+      type: object
+      properties:
+        refresh:
+          type: string
+      required:
+      - refresh
+    RoleEnum:
+      enum:
+      - owner
+      - staff
+      type: string
+      description: |-
+        * `owner` - Owner
+        * `staff` - Staff
+    SourceEnum:
+      enum:
+      - website
+      - app
+      - panel
+      - phone
+      type: string
+      description: |-
+        * `website` - Website
+        * `app` - Mobile app
+        * `panel` - Admin panel
+        * `phone` - Phone call
+    StaffLogin:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - email
+      - password
+    StaffUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - date_joined
+      - email
+      - id
+      - name
+    StatusD51Enum:
+      enum:
+      - received
+      - assigned
+      - in_progress
+      - completed
+      - cancelled
+      type: string
+      description: |-
+        * `received` - Received
+        * `assigned` - Assigned
+        * `in_progress` - In progress
+        * `completed` - Completed
+        * `cancelled` - Cancelled
+    TokenPair:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TyreConfirm:
+      type: object
+      properties:
+        tyre_size:
+          type: string
+          maxLength: 32
+      required:
+      - tyre_size
+    TyreSourceEnum:
+      enum:
+      - api
+      - driver
+      - staff
+      - unknown
+      type: string
+      description: |-
+        * `api` - Tyre data API
+        * `driver` - Confirmed by driver
+        * `staff` - Entered by staff
+        * `unknown` - Unknown
+    Vehicle:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        plate:
+          type: string
+          maxLength: 16
+        display_plate:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        make:
+          type: string
+          readOnly: true
+        model:
+          type: string
+          readOnly: true
+        colour:
+          type: string
+          readOnly: true
+        fuel_type:
+          type: string
+          readOnly: true
+        engine_capacity:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: cc
+        year_of_manufacture:
+          type: integer
+          readOnly: true
+          nullable: true
+        co2_emissions:
+          type: integer
+          readOnly: true
+          nullable: true
+        tax_status:
+          type: string
+          readOnly: true
+        tax_due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        mot_status:
+          type: string
+          readOnly: true
+        mot_expiry_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        tyre_size_front:
+          type: string
+          readOnly: true
+          description: e.g. 205/55R16
+        tyre_size_rear:
+          type: string
+          readOnly: true
+        tyre_load_index:
+          type: string
+          readOnly: true
+        tyre_speed_rating:
+          type: string
+          readOnly: true
+        tyre_pressure_front_psi:
+          type: integer
+          readOnly: true
+          nullable: true
+        tyre_pressure_rear_psi:
+          type: integer
+          readOnly: true
+          nullable: true
+        tyre_size_options:
+          readOnly: true
+          description: Alternative fitments when the trim is ambiguous.
+        tyre_source:
+          allOf:
+          - $ref: '#/components/schemas/TyreSourceEnum'
+          readOnly: true
+        dvla_fetched_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        tyre_fetched_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        lookup_error:
+          type: string
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - co2_emissions
+      - colour
+      - description
+      - display_plate
+      - dvla_fetched_at
+      - engine_capacity
+      - fuel_type
+      - id
+      - lookup_error
+      - make
+      - model
+      - mot_expiry_date
+      - mot_status
+      - plate
+      - tax_due_date
+      - tax_status
+      - tyre_fetched_at
+      - tyre_load_index
+      - tyre_pressure_front_psi
+      - tyre_pressure_rear_psi
+      - tyre_size_front
+      - tyre_size_options
+      - tyre_size_rear
+      - tyre_source
+      - tyre_speed_rating
+      - updated_at
+      - year_of_manufacture
+  securitySchemes:
+    driverJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT issued for the driver audience.
+    staffJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT issued for the staff audience.

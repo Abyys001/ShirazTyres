@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shiraztyres}
+      POSTGRES_USER: ${POSTGRES_USER:-shiraztyres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shiraztyres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shiraztyres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      # 5433 by default so a Postgres already running on the host still works.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: .env
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    volumes:
+      - ./backend:/app
+      - static_files:/app/staticfiles
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    env_file: .env
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - backend
+      - redis
+
+  beat:
+    build: ./backend
+    env_file: .env
+    command: ["celery", "-A", "config", "beat", "-l", "info"]
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+
+  panel:
+    build:
+      context: ./panel
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      # Server-side calls stay inside the compose network; the browser never
+      # talks to the API directly (it goes through the panel's proxy route).
+      API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://backend:8000/api/v1}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+    volumes:
+      - ./panel:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    command: ["npm", "run", "dev"]
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  static_files:

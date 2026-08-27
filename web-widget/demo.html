@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShirazTyres call-out widget — demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f7f7f8; color: #18181b; }
+    .page { max-width: 720px; margin: 0 auto; padding: 48px 20px; }
+    h1 { margin: 0 0 8px; }
+    p.lede { color: #52525b; margin: 0 0 32px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Emergency tyre call-out</h1>
+    <p class="lede">This page shows the widget exactly as it embeds into the live site.</p>
+
+    <div id="shiraztyres-callout"
+         data-api="/api/v1"
+         data-phone="+441234567890"></div>
+  </div>
+
+  <script src="./src/shiraztyres-widget.js" defer></script>
+  <script>
+    document.addEventListener('shiraztyres:booked', function (event) {
+      console.log('Booking created', event.detail.reference);
+    });
+  </script>
+</body>
+</html>
