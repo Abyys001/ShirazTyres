@@ -6,36 +6,36 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import Driver
-from apps.accounts.permissions import IsDriver, IsStaff
+from apps.accounts.permissions import IsCustomer, IsStaff
 
-from .models import DriverVehicle, Vehicle
+from .models import CustomerVehicle, Vehicle
 from .plate import normalise_plate
 from .providers import VehicleLookupError
-from .serializers import DriverVehicleSerializer, TyreConfirmSerializer, VehicleSerializer
-from .services import confirm_tyre_size, lookup_plate
-
-
-@extend_schema(
-    tags=["vehicles"],
-    parameters=[OpenApiParameter("refresh", bool, description="Bypass the cached record.")],
-    responses={200: VehicleSerializer},
+from .serializers import (
+    CustomerVehicleSerializer,
+    StaffTyreOverrideSerializer,
+    TyreConfirmationSerializer,
+    VehicleSerializer,
 )
+from .services import confirm_tyre_size, lookup_plate, record_confirmation
+
+
+@extend_schema(tags=["vehicles"], responses={200: VehicleSerializer})
 class VehicleLookupView(APIView):
-    """Public plate lookup — the website widget and the app both call this."""
+    """Public plate lookup — the website, the customer app and the widget all call this.
+
+    Always served from the cache when there is one, and there is no way to force a
+    refresh from here: an anonymous caller must not be able to burn the DVLA quota.
+    Staff force one through the panel's own endpoint instead.
+    """
 
     authentication_classes: list = []
     permission_classes = [AllowAny]
     throttle_scope = "vehicle_lookup"
 
     def get(self, request, plate):
-        normalised = normalise_plate(plate)
-        force = request.query_params.get("refresh") in {"1", "true", "yes"}
-        if force and not isinstance(request.user, (Driver,)) and not request.user.is_authenticated:
-            force = False  # Anonymous callers must not be able to burn the DVLA quota.
-
         try:
-            vehicle = lookup_plate(normalised, force_refresh=force)
+            vehicle = lookup_plate(normalise_plate(plate))
         except VehicleLookupError as exc:
             if exc.not_found:
                 raise NotFound(str(exc)) from exc
@@ -45,7 +45,7 @@ class VehicleLookupView(APIView):
 
 @extend_schema(tags=["vehicles"])
 class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
-    """Staff-side vehicle browser plus the manual tyre-size override."""
+    """The standalone lookup tool in the panel, independent of any job — section 9.3."""
 
     queryset = Vehicle.objects.all()
     serializer_class = VehicleSerializer
@@ -54,12 +54,34 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["updated_at", "plate"]
     lookup_field = "plate"
 
-    @extend_schema(request=TyreConfirmSerializer, responses={200: VehicleSerializer})
+    @extend_schema(
+        parameters=[OpenApiParameter("refresh", bool, description="Bypass the cached record.")],
+        responses={200: VehicleSerializer},
+    )
+    def retrieve(self, request, plate=None):
+        """A registration the office has never seen is looked up, not 404'd.
+
+        This is the standalone tool of section 9.3, so it has to answer for any
+        plate, not only the ones that already have a job against them. The caller
+        is staff, so forcing a refresh here is safe.
+        """
+        force = request.query_params.get("refresh") in {"1", "true", "yes"}
+        try:
+            vehicle = lookup_plate(normalise_plate(plate), force_refresh=force)
+        except VehicleLookupError as exc:
+            if exc.not_found:
+                raise NotFound(str(exc)) from exc
+            raise ValidationError({"plate": [str(exc)]}) from exc
+        return Response(VehicleSerializer(vehicle).data)
+
+    @extend_schema(request=StaffTyreOverrideSerializer, responses={200: VehicleSerializer})
     @action(detail=True, methods=["post"], url_path="confirm-tyre")
     def confirm_tyre(self, request, plate=None):
-        serializer = TyreConfirmSerializer(data=request.data)
+        serializer = StaffTyreOverrideSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        vehicle = confirm_tyre_size(self.get_object(), serializer.validated_data["tyre_size"], by_staff=True)
+        vehicle = confirm_tyre_size(
+            self.get_object(), serializer.validated_data["tyre_size"], source=Vehicle.TyreSource.STAFF
+        )
         return Response(VehicleSerializer(vehicle).data)
 
     @extend_schema(request=None, responses={200: VehicleSerializer})
@@ -71,18 +93,17 @@ class VehicleViewSet(viewsets.ReadOnlyModelViewSet):
 
 @extend_schema(tags=["vehicles"])
 class MyVehicleViewSet(viewsets.ModelViewSet):
-    """A driver's saved vehicles — 'my car' in the app, so a callout is two taps."""
+    """A customer's saved cars, so a repeat call-out is two taps."""
 
-    serializer_class = DriverVehicleSerializer
-    permission_classes = [IsDriver]
+    serializer_class = CustomerVehicleSerializer
+    permission_classes = [IsCustomer]
     http_method_names = ["get", "post", "patch", "delete"]
-
-    queryset = DriverVehicle.objects.none()  # Real rows come from get_queryset.
+    queryset = CustomerVehicle.objects.none()
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
-            return DriverVehicle.objects.none()
-        return DriverVehicle.objects.filter(driver=self.request.user).select_related("vehicle")
+            return CustomerVehicle.objects.none()
+        return CustomerVehicle.objects.filter(customer=self.request.user).select_related("vehicle")
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -92,8 +113,8 @@ class MyVehicleViewSet(viewsets.ModelViewSet):
         except VehicleLookupError as exc:
             raise ValidationError({"plate": [str(exc)]}) from exc
 
-        link, created = DriverVehicle.objects.get_or_create(
-            driver=request.user,
+        link, created = CustomerVehicle.objects.get_or_create(
+            customer=request.user,
             vehicle=vehicle,
             defaults={
                 "nickname": serializer.validated_data.get("nickname", ""),
@@ -101,14 +122,25 @@ class MyVehicleViewSet(viewsets.ModelViewSet):
             },
         )
         return Response(
-            DriverVehicleSerializer(link).data,
+            CustomerVehicleSerializer(link).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-    @extend_schema(request=TyreConfirmSerializer, responses={200: VehicleSerializer})
+    @extend_schema(request=TyreConfirmationSerializer, responses={200: CustomerVehicleSerializer})
     @action(detail=True, methods=["post"], url_path="confirm-tyre")
     def confirm_tyre(self, request, pk=None):
-        serializer = TyreConfirmSerializer(data=request.data)
+        """Section 4.3 against a saved car, so the decision carries into the next call-out."""
+        serializer = TyreConfirmationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        vehicle = confirm_tyre_size(self.get_object().vehicle, serializer.validated_data["tyre_size"], by_staff=False)
-        return Response(VehicleSerializer(vehicle).data)
+        link = self.get_object()
+        data = serializer.validated_data
+        link = record_confirmation(
+            link,
+            path=data["confirmation_path"],
+            looked_up_size=link.vehicle.tyre_size_front,
+            customer_size=data.get("tyre_size", ""),
+            load_index=data.get("load_index", ""),
+            speed_rating=data.get("speed_rating", ""),
+            disclaimer_accepted=data.get("disclaimer_accepted", False),
+        )
+        return Response(CustomerVehicleSerializer(link).data)

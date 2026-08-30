@@ -1,17 +1,27 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono, Sora } from "next/font/google";
 
 import { Providers } from "@/components/providers";
 
 import "./globals.css";
+
+/** Sora sets the headline voice; Inter carries the UI; mono is for VRMs and money. */
+const display = Sora({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-display" });
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "ShirazTyres Panel",
   description: "Emergency tyre call-outs, drivers and vehicle lookups.",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0B1315",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" className={`dark ${display.variable} ${sans.variable} ${mono.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

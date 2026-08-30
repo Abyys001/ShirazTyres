@@ -10,10 +10,20 @@ class AppConfig {
     defaultValue: 'http://10.0.2.2:8000/api/v1',
   );
 
-  static const String shopPhone = String.fromEnvironment(
-    'SHOP_PHONE',
+  static const String wsBaseUrl = String.fromEnvironment(
+    'WS_BASE_URL',
+    defaultValue: 'ws://10.0.2.2:8000/ws',
+  );
+
+  static const String officePhone = String.fromEnvironment(
+    'OFFICE_PHONE',
     defaultValue: '+441234567890',
   );
 
   static const Duration requestTimeout = Duration(seconds: 20);
+
+  /// Section 11.1: updates go on a distance filter, not a timer, so a parked van
+  /// stops sending and the battery survives the shift.
+  static const int locationFilterMetres = 75;
+  static const Duration locationTimeCap = Duration(minutes: 2);
 }

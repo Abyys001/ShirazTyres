@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 
-from .models import Driver, OtpCode, StaffUser
+from .models import Customer, OtpCode, SocialIdentity, StaffUser
 from .phone import normalise_phone
 
 
@@ -20,6 +20,15 @@ class OtpVerifySerializer(serializers.Serializer):
     code = serializers.CharField(max_length=12)
     name = serializers.CharField(max_length=120, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
+
+
+class GoogleSignInSerializer(serializers.Serializer):
+    id_token = serializers.CharField()
+
+
+class AttachPhoneSerializer(serializers.Serializer):
+    phone = PhoneField(max_length=32)
+    code = serializers.CharField(max_length=12)
 
 
 class TokenPairSerializer(serializers.Serializer):
@@ -50,29 +59,42 @@ class StaffUserSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "date_joined")
 
 
-class DriverSerializer(serializers.ModelSerializer):
-    phone = PhoneField(max_length=32)
+class SocialIdentitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SocialIdentity
+        fields = ("id", "provider", "email", "created_at", "last_used_at")
+        read_only_fields = fields
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    phone = PhoneField(max_length=32, required=False, allow_null=True)
     vehicle_count = serializers.IntegerField(read_only=True, default=0)
+    job_count = serializers.IntegerField(read_only=True, default=0)
+    identities = SocialIdentitySerializer(many=True, read_only=True)
 
     class Meta:
-        model = Driver
+        model = Customer
         fields = (
-            "id", "name", "phone", "email", "is_phone_verified", "is_active",
-            "notes", "vehicle_count", "created_at", "updated_at", "last_login_at",
+            "id", "name", "phone", "email", "photo_url", "is_phone_verified", "is_email_verified",
+            "is_active", "notes", "vehicle_count", "job_count", "identities",
+            "created_at", "updated_at", "last_login_at",
         )
-        read_only_fields = ("id", "is_phone_verified", "created_at", "updated_at", "last_login_at")
+        read_only_fields = (
+            "id", "photo_url", "is_phone_verified", "is_email_verified",
+            "created_at", "updated_at", "last_login_at",
+        )
 
     def validate_phone(self, value):
-        qs = Driver.objects.filter(phone=value)
+        queryset = Customer.objects.filter(phone=value)
         if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise serializers.ValidationError("A driver with this phone number already exists.")
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("A customer with this phone number already exists.")
         return value
 
 
-class DriverSelfSerializer(DriverSerializer):
-    """Drivers may edit their own name/email but never their notes or active flag."""
+class CustomerSelfSerializer(CustomerSerializer):
+    """Customers may edit their own name and email, never their notes or active flag."""
 
-    class Meta(DriverSerializer.Meta):
-        read_only_fields = DriverSerializer.Meta.read_only_fields + ("phone", "notes", "is_active")
+    class Meta(CustomerSerializer.Meta):
+        read_only_fields = CustomerSerializer.Meta.read_only_fields + ("phone", "notes", "is_active")

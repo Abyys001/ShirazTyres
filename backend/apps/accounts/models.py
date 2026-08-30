@@ -24,7 +24,7 @@ class StaffUserManager(BaseUserManager):
 
 
 class StaffUser(AbstractBaseUser, PermissionsMixin):
-    """Shop owner and staff. Separate audience from Driver — different login, different tokens."""
+    """Owner and office staff. A separate audience from customers and from drivers."""
 
     class Role(models.TextChoices):
         OWNER = "owner", "Owner"
@@ -54,15 +54,23 @@ class StaffUser(AbstractBaseUser, PermissionsMixin):
         return self.role == self.Role.OWNER
 
 
-class Driver(models.Model):
-    phone = models.CharField(max_length=20, unique=True, db_index=True)
+class Customer(models.Model):
+    """The stranded motorist. Not a Django user — a separate audience with its own tokens.
+
+    Both sign-in routes land here: Google resolves through ``SocialIdentity``, phone OTP
+    through ``phone``. Specification section 4.1 requires that they reach the same record.
+    """
+
+    phone = models.CharField(max_length=20, unique=True, null=True, blank=True, db_index=True)
     name = models.CharField(max_length=120, blank=True)
-    email = models.EmailField(blank=True)
+    email = models.EmailField(blank=True, db_index=True)
+    photo_url = models.URLField(blank=True)
     is_phone_verified = models.BooleanField(default=False)
+    is_email_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True, help_text="Internal notes, visible to staff only.")
     created_by_staff = models.ForeignKey(
-        StaffUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="created_drivers"
+        StaffUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="created_customers"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -72,18 +80,47 @@ class Driver(models.Model):
         ordering = ("-created_at",)
 
     def __str__(self):
-        return f"{self.name or 'Driver'} ({self.phone})"
+        return f"{self.name or 'Customer'} ({self.phone or self.email or self.pk})"
 
     @property
     def is_authenticated(self):
-        """Lets DRF permission classes treat a Driver like an authenticated principal."""
+        """Lets DRF permission classes treat a Customer like an authenticated principal."""
         return True
+
+    @property
+    def display_name(self):
+        return self.name or self.phone or self.email or f"Customer #{self.pk}"
+
+
+class SocialIdentity(models.Model):
+    """One row per external identity. Unique on (provider, subject) so a second Google
+    sign-in reaches the existing customer instead of forking a new account."""
+
+    class Provider(models.TextChoices):
+        GOOGLE = "google", "Google"
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="identities")
+    provider = models.CharField(max_length=16, choices=Provider.choices)
+    subject = models.CharField(max_length=191, help_text="The provider's stable user id.")
+    email = models.EmailField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "subject"], name="unique_social_identity")
+        ]
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.get_provider_display()} identity for {self.customer}"
 
 
 class OtpCode(models.Model):
     class Purpose(models.TextChoices):
         LOGIN = "login", "Login or registration"
-        BOOKING = "booking", "Confirm emergency request"
+        JOB = "job", "Confirm emergency request"
+        DRIVER = "driver", "Driver sign-in"
 
     phone = models.CharField(max_length=20, db_index=True)
     purpose = models.CharField(max_length=16, choices=Purpose.choices, default=Purpose.LOGIN)

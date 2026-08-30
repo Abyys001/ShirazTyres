@@ -31,12 +31,12 @@ function LoginForm() {
       return;
     }
 
-    router.replace(params.get("next") || "/bookings");
+    router.replace(params.get("next") || "/jobs");
     router.refresh();
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-surface p-6 shadow-sm">
       <div>
         <h1 className="text-lg font-semibold">ShirazTyres</h1>
         <p className="text-sm text-ink-muted">Staff sign in</p>

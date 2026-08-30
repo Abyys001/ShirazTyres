@@ -1,4 +1,4 @@
-"""Teaches drf-spectacular about the two custom authentication classes.
+"""Teaches drf-spectacular about the three custom authentication classes.
 
 Imported from AccountsConfig.ready() — extensions register on import.
 """
@@ -23,6 +23,12 @@ class StaffJWTScheme(_BearerScheme):
     target_class = "apps.accounts.authentication.StaffJWTAuthentication"
     name = "staffJWT"
     audience = "staff"
+
+
+class CustomerJWTScheme(_BearerScheme):
+    target_class = "apps.accounts.authentication.CustomerJWTAuthentication"
+    name = "customerJWT"
+    audience = "customer"
 
 
 class DriverJWTScheme(_BearerScheme):

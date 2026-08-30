@@ -25,3 +25,7 @@ def env_int(key: str, default: int) -> int:
 
 def env_list(key: str, default: str = "") -> list[str]:
     return [item.strip() for item in os.environ.get(key, default).split(",") if item.strip()]
+
+
+def env_float(key: str, default: float) -> float:
+    return float(os.environ.get(key, default))

@@ -1,133 +1,141 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
-import { Button, Card, EmptyState, Field, Input } from "@/components/ui";
-import { api, fieldError } from "@/lib/client-api";
-import { formatDateTime } from "@/lib/format";
-import type { Driver, Paginated } from "@/types/api";
+import { AlertBanner, Card, EmptyState, Select, Stat, VerificationBadge } from "@/components/ui";
+import { api } from "@/lib/client-api";
+import { formatDate } from "@/lib/format";
+import type { Compliance, Driver, Paginated } from "@/types/api";
 
-const EMPTY = { name: "", phone: "", email: "", notes: "" };
+const FILTERS = [
+  { value: "", label: "All drivers" },
+  { value: "pending", label: "Awaiting approval" },
+  { value: "approved", label: "Approved" },
+  { value: "suspended", label: "Suspended" },
+  { value: "rejected", label: "Rejected" },
+];
 
 export default function DriversPage() {
-  const [search, setSearch] = useState("");
-  const [form, setForm] = useState(EMPTY);
-  const queryClient = useQueryClient();
+  const [status, setStatus] = useState("");
 
   const drivers = useQuery({
-    queryKey: ["drivers", search],
-    queryFn: () => api<Paginated<Driver>>(`/drivers?search=${encodeURIComponent(search)}`),
+    queryKey: ["drivers", status],
+    queryFn: () => api<Paginated<Driver>>(`/drivers${status ? `?verification_status=${status}` : ""}`),
+    refetchInterval: 60_000,
   });
 
-  const create = useMutation({
-    mutationFn: (payload: typeof EMPTY) =>
-      api<Driver>("/drivers", { method: "POST", body: JSON.stringify(payload) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drivers"] });
-      setForm(EMPTY);
-    },
+  const compliance = useQuery({
+    queryKey: ["compliance"],
+    queryFn: () => api<Compliance>("/drivers/compliance"),
+    refetchInterval: 60_000,
   });
 
-  const sendCode = useMutation({
-    mutationFn: (id: number) => api(`/drivers/${id}/send-login-code`, { method: "POST" }),
-  });
+  const expiring = compliance.data?.expiring ?? [];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="lg:col-span-2">
-        <Card
-          title="Drivers"
-          action={
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search name or phone"
-              className="w-56"
-            />
-          }
-        >
-          {drivers.isLoading ? <EmptyState>Loading…</EmptyState> : null}
-          {drivers.data?.results.length === 0 ? <EmptyState>No drivers yet.</EmptyState> : null}
+    <div className="space-y-6">
+      {compliance.data && compliance.data.counts.pending > 0 ? (
+        <AlertBanner>
+          <span>
+            <strong>{compliance.data.counts.pending}</strong> driver
+            {compliance.data.counts.pending === 1 ? "" : "s"} waiting for approval, and{" "}
+            {compliance.data.pending_documents} document
+            {compliance.data.pending_documents === 1 ? "" : "s"} to review.
+          </span>
+        </AlertBanner>
+      ) : null}
 
-          {drivers.data && drivers.data.results.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                  <tr className="border-b border-slate-100">
-                    <th className="py-2 pr-3">Name</th>
-                    <th className="py-2 pr-3">Phone</th>
-                    <th className="py-2 pr-3">Verified</th>
-                    <th className="py-2 pr-3">Vehicles</th>
-                    <th className="py-2 pr-3">Last login</th>
-                    <th className="py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {drivers.data.results.map((driver) => (
-                    <tr key={driver.id} className="border-b border-slate-50 last:border-0">
-                      <td className="py-2 pr-3">{driver.name || "—"}</td>
-                      <td className="py-2 pr-3">{driver.phone}</td>
-                      <td className="py-2 pr-3">
-                        {driver.is_phone_verified ? (
-                          <span className="text-emerald-700">Yes</span>
-                        ) : (
-                          <span className="text-amber-700">Pending</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3">{driver.vehicle_count}</td>
-                      <td className="py-2 pr-3 text-xs text-ink-muted">{formatDateTime(driver.last_login_at)}</td>
-                      <td className="py-2 text-right">
-                        <Button
-                          variant="ghost"
-                          disabled={sendCode.isPending}
-                          onClick={() => sendCode.mutate(driver.id)}
-                        >
-                          Send login code
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </Card>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Pending" value={compliance.data?.counts.pending ?? 0} tone="alert" />
+        <Stat label="Approved" value={compliance.data?.counts.approved ?? 0} />
+        <Stat label="Suspended" value={compliance.data?.counts.suspended ?? 0} tone="alert" />
+        <Stat label="Online now" value={compliance.data?.counts.online ?? 0} />
       </div>
 
-      <Card title="Add a driver">
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create.mutate(form);
-          }}
-        >
-          <Field label="Name" error={fieldError(create.error, "name")}>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </Field>
-          <Field label="Phone" error={fieldError(create.error, "phone")}>
-            <Input
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="07700 900123"
-              required
-            />
-          </Field>
-          <Field label="Email" error={fieldError(create.error, "email")}>
-            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </Field>
-          <Field label="Internal notes" error={fieldError(create.error, "notes")}>
-            <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-          </Field>
-
-          <Button type="submit" disabled={create.isPending} className="w-full">
-            {create.isPending ? "Saving…" : "Add driver"}
-          </Button>
-          <p className="text-xs text-ink-muted">
-            The driver stays unverified until they sign in with a code — send one from the list.
+      {expiring.length > 0 ? (
+        <Card title="Documents expiring">
+          <ul className="space-y-1 text-sm">
+            {expiring.map((document) => (
+              <li key={document.document_id} className="flex flex-wrap items-center gap-2">
+                <Link href={`/drivers/${document.driver_id}`} className="text-brand hover:underline">
+                  {document.driver_name}
+                </Link>
+                <span className="text-ink-muted">{document.document_type}</span>
+                <span className={document.is_expired ? "text-brand" : "text-ink-muted"}>
+                  {document.is_expired
+                    ? `expired ${formatDate(document.expiry_date)}`
+                    : `expires in ${document.days_to_expiry} days`}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-ink-subtle">
+            A driver whose required documents lapse is suspended automatically (section 8.3).
           </p>
-        </form>
+        </Card>
+      ) : null}
+
+      <Card
+        title="Drivers"
+        action={
+          <Select value={status} onChange={(event) => setStatus(event.target.value)} className="w-48">
+            {FILTERS.map((filter) => (
+              <option key={filter.value} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </Select>
+        }
+      >
+        {drivers.isLoading ? <EmptyState>Loading…</EmptyState> : null}
+        {drivers.data && drivers.data.results.length === 0 ? (
+          <EmptyState>No drivers match this filter.</EmptyState>
+        ) : null}
+
+        {drivers.data && drivers.data.results.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                <tr className="border-b border-line">
+                  <th className="py-2 pr-3">Name</th>
+                  <th className="py-2 pr-3">Phone</th>
+                  <th className="py-2 pr-3">Van</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">Online</th>
+                  <th className="py-2 pr-3">Jobs now</th>
+                  <th className="py-2 pr-3">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drivers.data.results.map((driver) => (
+                  <tr key={driver.id} className="border-b border-line last:border-0 hover:bg-surface-raised">
+                    <td className="py-2 pr-3 font-medium">
+                      <Link href={`/drivers/${driver.id}`} className="text-brand hover:underline">
+                        {driver.name || "Unnamed"}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-3">{driver.phone}</td>
+                    <td className="py-2 pr-3">{driver.vehicles[0]?.display_plate ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      <VerificationBadge status={driver.verification_status} label={driver.status_display} />
+                    </td>
+                    <td className="py-2 pr-3 text-xs">{driver.is_online ? "yes" : "no"}</td>
+                    <td className="py-2 pr-3 text-xs">{driver.active_jobs}</td>
+                    <td className="py-2 pr-3 text-xs text-ink-muted">
+                      {driver.missing_documents.length > 0
+                        ? driver.missing_documents.join(", ")
+                        : driver.expired_documents.length > 0
+                          ? `expired: ${driver.expired_documents.join(", ")}`
+                          : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </Card>
     </div>
   );

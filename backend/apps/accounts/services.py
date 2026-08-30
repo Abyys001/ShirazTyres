@@ -1,4 +1,7 @@
-"""OTP issue/verify. Codes are hashed at rest — a database leak must not hand over live codes."""
+"""OTP issue/verify, and resolving a sign-in to exactly one Customer.
+
+Codes are hashed at rest — a database leak must not hand over live codes.
+"""
 
 import logging
 import secrets
@@ -11,7 +14,8 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Driver, OtpCode
+from .google import GoogleProfile
+from .models import Customer, OtpCode, SocialIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,11 @@ def issue_otp(phone: str, purpose: str = OtpCode.Purpose.LOGIN) -> OtpIssueResul
             phone=phone, purpose=purpose, code_hash=make_password(code), expires_at=expires_at
         )
 
-    send_sms(phone, f"Your ShirazTyres verification code is {code}. It expires in {settings.OTP_TTL_SECONDS // 60} minutes.")
+    send_sms(
+        phone,
+        f"Your ShirazTyres verification code is {code}. "
+        f"It expires in {settings.OTP_TTL_SECONDS // 60} minutes.",
+    )
     logger.info("otp.issued phone=%s purpose=%s", phone[-4:].rjust(len(phone), "*"), purpose)
 
     return OtpIssueResult(
@@ -99,21 +107,129 @@ def verify_otp(phone: str, code: str, purpose: str = OtpCode.Purpose.LOGIN) -> N
         raise OtpError(error)
 
 
-def get_or_create_driver(phone: str, name: str = "", email: str = "") -> tuple[Driver, bool]:
-    driver, created = Driver.objects.get_or_create(
+def _touch_login(customer: Customer, updates: list[str]) -> None:
+    customer.last_login_at = timezone.now()
+    updates.append("last_login_at")
+    customer.save(update_fields=list(dict.fromkeys(updates)))
+
+
+def get_or_create_customer_by_phone(phone: str, name: str = "", email: str = "") -> tuple[Customer, bool]:
+    customer, created = Customer.objects.get_or_create(
         phone=phone, defaults={"name": name, "email": email, "is_phone_verified": True}
     )
-    updates = []
-    if not driver.is_phone_verified:
-        driver.is_phone_verified = True
+    updates: list[str] = []
+    if not customer.is_phone_verified:
+        customer.is_phone_verified = True
         updates.append("is_phone_verified")
-    if name and not driver.name:
-        driver.name = name
+    if name and not customer.name:
+        customer.name = name
         updates.append("name")
-    if email and not driver.email:
-        driver.email = email
+    if email and not customer.email:
+        customer.email = email
         updates.append("email")
-    driver.last_login_at = timezone.now()
-    updates.append("last_login_at")
-    driver.save(update_fields=updates)
-    return driver, created
+    _touch_login(customer, updates)
+    return customer, created
+
+
+def get_or_create_customer_by_google(profile: GoogleProfile) -> tuple[Customer, bool]:
+    """Section 4.1: Google and phone OTP must resolve to the same account.
+
+    Matching on a *verified* Google email is what joins the two routes. An unverified
+    Google email is not evidence of ownership, so it starts a fresh account instead.
+    """
+    identity = (
+        SocialIdentity.objects.select_related("customer")
+        .filter(provider=SocialIdentity.Provider.GOOGLE, subject=profile.subject)
+        .first()
+    )
+    if identity is not None:
+        customer = identity.customer
+        identity.last_used_at = timezone.now()
+        identity.save(update_fields=["last_used_at"])
+        _touch_login(customer, [])
+        return customer, False
+
+    created = False
+    with transaction.atomic():
+        customer = None
+        if profile.email and profile.email_verified:
+            customer = Customer.objects.filter(email__iexact=profile.email).first()
+
+        if customer is None:
+            customer = Customer.objects.create(
+                name=profile.name,
+                email=profile.email,
+                photo_url=profile.picture,
+                is_email_verified=profile.email_verified,
+            )
+            created = True
+
+        SocialIdentity.objects.create(
+            customer=customer,
+            provider=SocialIdentity.Provider.GOOGLE,
+            subject=profile.subject,
+            email=profile.email,
+            last_used_at=timezone.now(),
+        )
+
+    updates: list[str] = []
+    if profile.name and not customer.name:
+        customer.name = profile.name
+        updates.append("name")
+    if profile.email and not customer.email:
+        customer.email = profile.email
+        updates.append("email")
+    if profile.email_verified and not customer.is_email_verified:
+        customer.is_email_verified = True
+        updates.append("is_email_verified")
+    if profile.picture and not customer.photo_url:
+        customer.photo_url = profile.picture
+        updates.append("photo_url")
+    _touch_login(customer, updates)
+    return customer, created
+
+
+def attach_phone_to_customer(customer: Customer, phone: str) -> Customer:
+    """A Google-first customer adding their number. If that number already belongs to
+    another account the two are merged, so the customer keeps one job history."""
+    existing = Customer.objects.filter(phone=phone).exclude(pk=customer.pk).first()
+    if existing is not None:
+        merge_customers(keep=customer, absorb=existing)
+    customer.phone = phone
+    customer.is_phone_verified = True
+    customer.save(update_fields=["phone", "is_phone_verified"])
+    return customer
+
+
+def merge_customers(*, keep: Customer, absorb: Customer) -> Customer:
+    """Move everything the absorbed account owns onto the surviving one, then delete it."""
+    from apps.bookings.models import Job
+    from apps.notifications.models import DeviceToken
+    from apps.vehicles.models import CustomerVehicle
+
+    with transaction.atomic():
+        Job.objects.filter(customer=absorb).update(customer=keep)
+        DeviceToken.objects.filter(customer=absorb).update(customer=keep)
+        SocialIdentity.objects.filter(customer=absorb).update(customer=keep)
+
+        kept_vehicle_ids = set(
+            CustomerVehicle.objects.filter(customer=keep).values_list("vehicle_id", flat=True)
+        )
+        for link in CustomerVehicle.objects.filter(customer=absorb):
+            if link.vehicle_id in kept_vehicle_ids:
+                link.delete()
+            else:
+                link.customer = keep
+                link.save(update_fields=["customer"])
+
+        if not keep.name and absorb.name:
+            keep.name = absorb.name
+        if not keep.email and absorb.email:
+            keep.email = absorb.email
+        keep.save(update_fields=["name", "email"])
+
+        absorb_id = absorb.pk
+        absorb.delete()
+
+    logger.info("customer.merged kept=%s absorbed=%s", keep.pk, absorb_id)
+    return keep

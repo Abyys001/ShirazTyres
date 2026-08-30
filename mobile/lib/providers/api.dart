@@ -2,9 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/auth_api.dart';
-import '../api/booking_api.dart';
 import '../api/device_api.dart';
-import '../api/vehicle_api.dart';
+import '../api/driver_api.dart';
+import '../api/job_api.dart';
 import '../core/api_client.dart';
 import '../core/token_store.dart';
 
@@ -29,6 +29,6 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 });
 
 final authApiProvider = Provider<AuthApi>((ref) => AuthApi(ref.watch(apiClientProvider)));
-final bookingApiProvider = Provider<BookingApi>((ref) => BookingApi(ref.watch(apiClientProvider)));
-final vehicleApiProvider = Provider<VehicleApi>((ref) => VehicleApi(ref.watch(apiClientProvider)));
+final driverApiProvider = Provider<DriverApi>((ref) => DriverApi(ref.watch(apiClientProvider)));
+final jobApiProvider = Provider<JobApi>((ref) => JobApi(ref.watch(apiClientProvider)));
 final deviceApiProvider = Provider<DeviceApi>((ref) => DeviceApi(ref.watch(apiClientProvider)));

@@ -21,9 +21,9 @@ def _finish(notification: Notification, *, message_id: str = "", error: str = ""
     return notification
 
 
-def send_sms(to: str, body: str, *, booking=None) -> Notification:
+def send_sms(to: str, body: str, *, job=None, event: str = "") -> Notification:
     notification = Notification.objects.create(
-        booking=booking, channel=Notification.Channel.SMS, recipient=to, body=body
+        job=job, event=event, channel=Notification.Channel.SMS, recipient=to, body=body
     )
     try:
         result = get_sms_provider().send(to, body)
@@ -33,9 +33,10 @@ def send_sms(to: str, body: str, *, booking=None) -> Notification:
     return _finish(notification, message_id=result.message_id)
 
 
-def send_email(to: str, subject: str, body: str, *, booking=None) -> Notification:
+def send_email(to: str, subject: str, body: str, *, job=None, event: str = "") -> Notification:
     notification = Notification.objects.create(
-        booking=booking, channel=Notification.Channel.EMAIL, recipient=to, subject=subject, body=body
+        job=job, event=event, channel=Notification.Channel.EMAIL,
+        recipient=to, subject=subject, body=body,
     )
     try:
         send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [to], fail_silently=False)
@@ -45,9 +46,12 @@ def send_email(to: str, subject: str, body: str, *, booking=None) -> Notificatio
     return _finish(notification)
 
 
-def send_push(token_row: DeviceToken, title: str, body: str, data: dict | None = None, *, booking=None) -> Notification:
+def send_push(
+    token_row: DeviceToken, title: str, body: str, data: dict | None = None, *, job=None, event: str = ""
+) -> Notification:
     notification = Notification.objects.create(
-        booking=booking,
+        job=job,
+        event=event,
         channel=Notification.Channel.PUSH,
         recipient=token_row.token[:255],
         subject=title,
@@ -59,3 +63,11 @@ def send_push(token_row: DeviceToken, title: str, body: str, data: dict | None =
         logger.error("push.failed token=%s error=%s", token_row.pk, exc)
         return _finish(notification, error=str(exc))
     return _finish(notification, message_id=result.message_id)
+
+
+def push_to(queryset, title: str, body: str, data: dict | None = None, *, job=None, event: str = "") -> int:
+    sent = 0
+    for device in queryset.filter(is_active=True):
+        send_push(device, title, body, data, job=job, event=event)
+        sent += 1
+    return sent

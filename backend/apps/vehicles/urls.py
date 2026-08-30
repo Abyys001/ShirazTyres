@@ -8,6 +8,6 @@ router.register("vehicles", VehicleViewSet, basename="vehicle")
 router.register("my-vehicles", MyVehicleViewSet, basename="my-vehicle")
 
 urlpatterns = [
-    path("vehicle-lookup/<str:plate>", VehicleLookupView.as_view(), name="vehicle-lookup"),
+    path("public/vehicle-lookup/<str:plate>", VehicleLookupView.as_view(), name="vehicle-lookup"),
     path("", include(router.urls)),
 ]

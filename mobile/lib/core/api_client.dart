@@ -147,7 +147,7 @@ class ApiClient {
           return 'Too many attempts. Wait a minute and try again.';
         }
         if (status != null && status >= 500) {
-          return 'ShirazTyres is having trouble. Call us on ${AppConfig.shopPhone}.';
+          return 'ShirazTyres is having trouble. Call us on ${AppConfig.officePhone}.';
         }
         return 'Something went wrong. Please try again.';
     }

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DriverVehicle, Vehicle
+from .models import CustomerVehicle, Vehicle
 
 
 @admin.register(Vehicle)
@@ -11,7 +11,8 @@ class VehicleAdmin(admin.ModelAdmin):
     readonly_fields = ("raw_dvla", "raw_tyre", "dvla_fetched_at", "tyre_fetched_at")
 
 
-@admin.register(DriverVehicle)
-class DriverVehicleAdmin(admin.ModelAdmin):
-    list_display = ("driver", "vehicle", "nickname", "is_primary", "created_at")
-    search_fields = ("driver__phone", "vehicle__plate")
+@admin.register(CustomerVehicle)
+class CustomerVehicleAdmin(admin.ModelAdmin):
+    list_display = ("customer", "vehicle", "nickname", "confirmation_path", "confirmed_at")
+    list_filter = ("confirmation_path", "is_primary")
+    search_fields = ("customer__phone", "customer__name", "vehicle__plate")

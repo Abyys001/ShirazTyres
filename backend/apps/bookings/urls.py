@@ -2,20 +2,20 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    BookingViewSet,
-    DriverBookingDetailView,
-    DriverBookingCreateView,
-    DriverBookingListView,
-    PublicBookingCreateView,
+    CustomerJobViewSet,
+    DriverJobViewSet,
+    DriverOfferListView,
+    JobInvoiceView,
+    JobViewSet,
 )
 
 router = DefaultRouter(trailing_slash=False)
-router.register("bookings", BookingViewSet, basename="booking")
+router.register("jobs", JobViewSet, basename="job")
+router.register("my/jobs", CustomerJobViewSet, basename="my-job")
+router.register("driver/jobs", DriverJobViewSet, basename="driver-job")
 
 urlpatterns = [
-    path("public/bookings", PublicBookingCreateView.as_view(), name="public-booking-create"),
-    path("my/bookings", DriverBookingListView.as_view(), name="my-bookings"),
-    path("my/bookings/create", DriverBookingCreateView.as_view(), name="my-booking-create"),
-    path("my/bookings/<int:pk>", DriverBookingDetailView.as_view(), name="my-booking-detail"),
+    path("driver/offers", DriverOfferListView.as_view(), name="driver-offers"),
+    path("jobs/<int:pk>/invoice", JobInvoiceView.as_view(), name="job-invoice"),
     path("", include(router.urls)),
 ]

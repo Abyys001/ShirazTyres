@@ -1,10 +1,11 @@
 from django.db import models
 
-from apps.accounts.models import Driver, StaffUser
+from apps.accounts.models import Customer, StaffUser
+from apps.drivers.models import Driver
 
 
 class DeviceToken(models.Model):
-    """Push targets. A device belongs to a driver (app) or a staff user (panel/web push)."""
+    """Push targets. A device belongs to a customer, a driver, or a staff user."""
 
     class Platform(models.TextChoices):
         ANDROID = "android", "Android"
@@ -13,8 +14,15 @@ class DeviceToken(models.Model):
 
     token = models.CharField(max_length=255, unique=True)
     platform = models.CharField(max_length=16, choices=Platform.choices)
-    driver = models.ForeignKey(Driver, null=True, blank=True, on_delete=models.CASCADE, related_name="devices")
-    staff = models.ForeignKey(StaffUser, null=True, blank=True, on_delete=models.CASCADE, related_name="devices")
+    customer = models.ForeignKey(
+        Customer, null=True, blank=True, on_delete=models.CASCADE, related_name="devices"
+    )
+    driver = models.ForeignKey(
+        Driver, null=True, blank=True, on_delete=models.CASCADE, related_name="devices"
+    )
+    staff = models.ForeignKey(
+        StaffUser, null=True, blank=True, on_delete=models.CASCADE, related_name="devices"
+    )
     is_active = models.BooleanField(default=True)
     last_seen_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -23,13 +31,17 @@ class DeviceToken(models.Model):
         ordering = ("-last_seen_at",)
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(driver__isnull=False) | models.Q(staff__isnull=False),
+                condition=(
+                    models.Q(customer__isnull=False)
+                    | models.Q(driver__isnull=False)
+                    | models.Q(staff__isnull=False)
+                ),
                 name="device_token_has_owner",
             )
         ]
 
     def __str__(self):
-        return f"{self.platform} device for {self.driver or self.staff}"
+        return f"{self.platform} device for {self.customer or self.driver or self.staff}"
 
 
 class Notification(models.Model):
@@ -45,9 +57,10 @@ class Notification(models.Model):
         SENT = "sent", "Sent"
         FAILED = "failed", "Failed"
 
-    booking = models.ForeignKey(
-        "bookings.Booking", null=True, blank=True, on_delete=models.CASCADE, related_name="notifications"
+    job = models.ForeignKey(
+        "bookings.Job", null=True, blank=True, on_delete=models.CASCADE, related_name="notifications"
     )
+    event = models.CharField(max_length=32, blank=True, db_index=True)
     channel = models.CharField(max_length=16, choices=Channel.choices)
     recipient = models.CharField(max_length=255)
     subject = models.CharField(max_length=255, blank=True)

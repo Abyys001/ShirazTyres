@@ -11,12 +11,12 @@ class DeviceTokenSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    booking_reference = serializers.CharField(source="booking.reference", read_only=True, default="")
+    job_reference = serializers.CharField(source="job.reference", read_only=True, default="")
 
     class Meta:
         model = Notification
         fields = (
-            "id", "booking", "booking_reference", "channel", "recipient", "subject",
+            "id", "job", "job_reference", "event", "channel", "recipient", "subject",
             "status", "error", "created_at", "sent_at",
         )
         read_only_fields = fields

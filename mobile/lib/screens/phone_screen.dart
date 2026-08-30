@@ -69,7 +69,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                 Text('ShirazTyres', style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 6),
                 Text(
-                  'Emergency tyre call-out. Enter your mobile number and we will text you a code.',
+                  'Technician sign-in. Enter your work mobile number and we will text you a code.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 32),

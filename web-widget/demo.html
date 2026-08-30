@@ -3,28 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B1315">
   <title>ShirazTyres call-out widget — demo</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f7f7f8; color: #18181b; }
+    body { font-family: Sora, Inter, system-ui, sans-serif; margin: 0; background: #0B1315; color: #F8FAFC; }
     .page { max-width: 720px; margin: 0 auto; padding: 48px 20px; }
-    h1 { margin: 0 0 8px; }
-    p.lede { color: #52525b; margin: 0 0 32px; }
+    h1 { margin: 0 0 8px; font-weight: 700; letter-spacing: -0.02em; }
+    h1 span { color: #FFD700; }
+    p.lede { color: #CBD5E1; margin: 0 0 32px; }
   </style>
 </head>
 <body>
   <div class="page">
-    <h1>Emergency tyre call-out</h1>
-    <p class="lede">This page shows the widget exactly as it embeds into the live site.</p>
+    <h1>Emergency <span>tyre call-out</span></h1>
+    <p class="lede">This page shows the widget exactly as it embeds into the live site. It hands off to the customer site to finish the request.</p>
 
     <div id="shiraztyres-callout"
          data-api="/api/v1"
+         data-site="http://localhost:3001/request"
          data-phone="+441234567890"></div>
   </div>
 
   <script src="./src/shiraztyres-widget.js" defer></script>
   <script>
-    document.addEventListener('shiraztyres:booked', function (event) {
-      console.log('Booking created', event.detail.reference);
+    document.addEventListener('shiraztyres:handoff', function (event) {
+      console.log('Handing off to', event.detail.url);
     });
   </script>
 </body>

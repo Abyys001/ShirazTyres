@@ -6,11 +6,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Driver
-from .permissions import IsDriver, IsStaff
+from .google import verify_id_token
+from .models import Customer, OtpCode
+from .permissions import IsCustomer, IsStaff
 from .serializers import (
-    DriverSelfSerializer,
-    DriverSerializer,
+    AttachPhoneSerializer,
+    CustomerSelfSerializer,
+    CustomerSerializer,
+    GoogleSignInSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
     RefreshSerializer,
@@ -18,12 +21,20 @@ from .serializers import (
     StaffUserSerializer,
     TokenPairSerializer,
 )
-from .services import get_or_create_driver, issue_otp, verify_otp
-from .tokens import SCOPE_DRIVER, SCOPE_STAFF, issue_pair, refresh_pair
+from .services import (
+    attach_phone_to_customer,
+    get_or_create_customer_by_google,
+    get_or_create_customer_by_phone,
+    issue_otp,
+    verify_otp,
+)
+from .tokens import SCOPE_CUSTOMER, SCOPE_DRIVER, SCOPE_STAFF, issue_pair, refresh_pair
 
 
 @extend_schema(tags=["auth"], request=OtpRequestSerializer, responses={200: dict})
 class OtpRequestView(APIView):
+    """Shared by customers and drivers — the ``purpose`` decides which flow verifies it."""
+
     authentication_classes: list = []
     permission_classes = [AllowAny]
     throttle_scope = "otp_request"
@@ -42,7 +53,7 @@ class OtpRequestView(APIView):
 
 
 @extend_schema(tags=["auth"], request=OtpVerifySerializer, responses={200: TokenPairSerializer})
-class OtpVerifyView(APIView):
+class CustomerOtpVerifyView(APIView):
     authentication_classes: list = []
     permission_classes = [AllowAny]
     throttle_scope = "otp_verify"
@@ -51,13 +62,55 @@ class OtpVerifyView(APIView):
         serializer = OtpVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        verify_otp(data["phone"], data["code"])
-        driver, created = get_or_create_driver(data["phone"], data.get("name", ""), data.get("email", ""))
-        tokens = issue_pair(SCOPE_DRIVER, driver.pk)
+        verify_otp(data["phone"], data["code"], purpose=OtpCode.Purpose.LOGIN)
+        customer, created = get_or_create_customer_by_phone(
+            data["phone"], data.get("name", ""), data.get("email", "")
+        )
         return Response(
-            {**tokens, "is_new_driver": created, "driver": DriverSelfSerializer(driver).data},
+            {
+                **issue_pair(SCOPE_CUSTOMER, customer.pk),
+                "is_new_customer": created,
+                "customer": CustomerSelfSerializer(customer).data,
+            },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+@extend_schema(tags=["auth"], request=GoogleSignInSerializer, responses={200: TokenPairSerializer})
+class GoogleSignInView(APIView):
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "otp_verify"
+
+    def post(self, request):
+        serializer = GoogleSignInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile = verify_id_token(serializer.validated_data["id_token"])
+        customer, created = get_or_create_customer_by_google(profile)
+        return Response(
+            {
+                **issue_pair(SCOPE_CUSTOMER, customer.pk),
+                "is_new_customer": created,
+                "customer": CustomerSelfSerializer(customer).data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+@extend_schema(tags=["auth"], request=AttachPhoneSerializer, responses={200: CustomerSelfSerializer})
+class AttachPhoneView(APIView):
+    """A Google-first customer proving a phone number, so both routes reach one account."""
+
+    permission_classes = [IsCustomer]
+    throttle_scope = "otp_verify"
+
+    def post(self, request):
+        serializer = AttachPhoneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.validated_data["phone"]
+        verify_otp(phone, serializer.validated_data["code"], purpose=OtpCode.Purpose.LOGIN)
+        customer = attach_phone_to_customer(request.user, phone)
+        return Response(CustomerSelfSerializer(customer).data)
 
 
 @extend_schema(tags=["auth"], request=StaffLoginSerializer, responses={200: TokenPairSerializer})
@@ -88,6 +141,10 @@ class StaffRefreshView(ScopedRefreshView):
     scope = SCOPE_STAFF
 
 
+class CustomerRefreshView(ScopedRefreshView):
+    scope = SCOPE_CUSTOMER
+
+
 class DriverRefreshView(ScopedRefreshView):
     scope = SCOPE_DRIVER
 
@@ -100,32 +157,35 @@ class StaffMeView(APIView):
         return Response(StaffUserSerializer(request.user).data)
 
 
-@extend_schema(tags=["drivers"], responses={200: DriverSelfSerializer})
-class DriverMeView(APIView):
-    permission_classes = [IsDriver]
-    serializer_class = DriverSelfSerializer
+@extend_schema(tags=["customers"], responses={200: CustomerSelfSerializer})
+class CustomerMeView(APIView):
+    permission_classes = [IsCustomer]
+    serializer_class = CustomerSelfSerializer
 
     def get(self, request):
-        return Response(DriverSelfSerializer(request.user).data)
+        return Response(CustomerSelfSerializer(request.user).data)
 
-    @extend_schema(request=DriverSelfSerializer, responses={200: DriverSelfSerializer})
+    @extend_schema(request=CustomerSelfSerializer, responses={200: CustomerSelfSerializer})
     def patch(self, request):
-        serializer = DriverSelfSerializer(request.user, data=request.data, partial=True)
+        serializer = CustomerSelfSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
 
 
-@extend_schema(tags=["drivers"])
-class DriverViewSet(viewsets.ModelViewSet):
-    """Staff-side driver management — the 'shop can add drivers' half of the brief."""
+@extend_schema(tags=["customers"])
+class CustomerViewSet(viewsets.ModelViewSet):
+    """Staff-side customer records, including manually created ones for phone-in jobs."""
 
-    serializer_class = DriverSerializer
+    serializer_class = CustomerSerializer
     permission_classes = [IsStaff]
     filterset_fields = ["is_active", "is_phone_verified"]
     search_fields = ["name", "phone", "email"]
     ordering_fields = ["created_at", "name", "last_login_at"]
-    queryset = Driver.objects.annotate(vehicle_count=Count("vehicle_links")).all()
+    queryset = Customer.objects.annotate(
+        vehicle_count=Count("vehicle_links", distinct=True),
+        job_count=Count("jobs", distinct=True),
+    ).prefetch_related("identities")
 
     def perform_create(self, serializer):
         serializer.save(created_by_staff=self.request.user)
@@ -133,7 +193,12 @@ class DriverViewSet(viewsets.ModelViewSet):
     @extend_schema(request=None, responses={200: dict})
     @action(detail=True, methods=["post"], url_path="send-login-code")
     def send_login_code(self, request, pk=None):
-        """Staff-added drivers get a code so they can claim the account from the app."""
-        driver = self.get_object()
-        result = issue_otp(driver.phone)
+        """Staff-created customers get a code so they can claim the account from the app."""
+        customer = self.get_object()
+        if not customer.phone:
+            return Response(
+                {"detail": "This customer has no phone number.", "errors": {}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        result = issue_otp(customer.phone)
         return Response({"expires_at": result.expires_at, "resend_after_seconds": result.resend_after_seconds})

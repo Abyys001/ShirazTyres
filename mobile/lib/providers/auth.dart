@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/auth_api.dart';
@@ -20,6 +22,9 @@ class AuthState {
 
   bool get isSignedIn => status == AuthStatus.signedIn;
   bool get isResolved => status != AuthStatus.unknown;
+
+  /// Section 8.2: a driver exists long before they may take work.
+  bool get needsOnboarding => driver != null && !driver!.onboardingComplete;
 }
 
 class AuthController extends Notifier<AuthState> {
@@ -30,7 +35,7 @@ class AuthController extends Notifier<AuthState> {
     return const AuthState.unknown();
   }
 
-  AuthApi get _api => ref.read(authApiProvider);
+  AuthApi get _auth => ref.read(authApiProvider);
 
   /// Cold start: a stored token is only trusted once the API confirms it.
   Future<void> restore() async {
@@ -40,7 +45,7 @@ class AuthController extends Notifier<AuthState> {
       return;
     }
     try {
-      state = AuthState(status: AuthStatus.signedIn, driver: await _api.me());
+      state = AuthState(status: AuthStatus.signedIn, driver: await ref.read(driverApiProvider).me());
       await _registerDevice();
     } on ApiException {
       // Refresh already had its chance inside the client; anything left is dead.
@@ -49,24 +54,28 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
-  Future<OtpChallenge> requestOtp(String phone) => _api.requestOtp(phone);
-
-  Future<bool> verifyOtp(String phone, String code, {String name = ''}) async {
-    final session = await _api.verifyOtp(phone, code, name: name);
-    await ref.read(tokenStoreProvider).save(
-          access: session.access,
-          refresh: session.refresh,
-        );
-    state = AuthState(status: AuthStatus.signedIn, driver: session.driver);
-    await _registerDevice();
-    return session.isNewDriver;
+  Future<void> refreshDriver() async {
+    if (!state.isSignedIn) return;
+    state = AuthState(status: AuthStatus.signedIn, driver: await ref.read(driverApiProvider).me());
   }
 
-  Future<void> updateProfile({String? name, String? email}) async {
-    state = AuthState(
-      status: AuthStatus.signedIn,
-      driver: await _api.updateMe(name: name, email: email),
-    );
+  Future<OtpChallenge> requestOtp(String phone) => _auth.requestCode(phone);
+
+  Future<bool> verifyOtp(String phone, String code, {String name = ''}) async {
+    final session = await _auth.verify(phone: phone, code: code, name: name);
+    await ref.read(tokenStoreProvider).save(access: session.access, refresh: session.refresh);
+    state = AuthState(status: AuthStatus.signedIn, driver: session.driver);
+    await _registerDevice();
+    return session.isNew;
+  }
+
+  Future<void> updateProfile({String? name, String? email, File? photo}) async {
+    final driver = await ref.read(driverApiProvider).updateProfile(
+          name: name,
+          email: email,
+          photo: photo,
+        );
+    state = AuthState(status: AuthStatus.signedIn, driver: driver);
   }
 
   Future<void> signOut() async {
@@ -88,7 +97,7 @@ class AuthController extends Notifier<AuthState> {
     try {
       await ref.read(deviceApiProvider).register(token);
     } on ApiException {
-      // A missing push registration must never block getting a tyre fitted.
+      // A missing push registration must never block a shift starting.
     }
   }
 
@@ -97,9 +106,6 @@ class AuthController extends Notifier<AuthState> {
   }
 }
 
-final authControllerProvider =
-    NotifierProvider<AuthController, AuthState>(AuthController.new);
+final authControllerProvider = NotifierProvider<AuthController, AuthState>(AuthController.new);
 
-final currentDriverProvider = Provider<Driver?>(
-  (ref) => ref.watch(authControllerProvider).driver,
-);
+final currentDriverProvider = Provider<Driver?>((ref) => ref.watch(authControllerProvider).driver);

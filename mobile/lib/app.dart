@@ -10,7 +10,7 @@ class ShirazTyresApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'ShirazTyres',
+      title: 'ShirazTyres Driver',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       routerConfig: ref.watch(routerProvider),

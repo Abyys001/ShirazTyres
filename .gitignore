@@ -5,5 +5,19 @@ __pycache__/
 node_modules/
 .next/
 staticfiles/
+media/
 db.sqlite3
 .playwright-mcp/
+
+# Flutter build output. The platform folders themselves are committed: both apps
+# carry permission declarations and store strings that must not be regenerated.
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/android/local.properties
+**/.idea/
+*.iml

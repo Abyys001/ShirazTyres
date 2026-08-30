@@ -1,12 +1,20 @@
 import 'json.dart';
 
+/// The technician (specification section 2). Never the customer.
 class Driver {
   const Driver({
     required this.id,
     required this.name,
     required this.phone,
     required this.email,
-    required this.isPhoneVerified,
+    required this.photo,
+    required this.verificationStatus,
+    required this.statusDisplay,
+    required this.verificationNote,
+    required this.isOnline,
+    required this.vehicles,
+    required this.documents,
+    required this.missingDocuments,
   });
 
   factory Driver.fromJson(Map<String, dynamic> json) => Driver(
@@ -14,14 +22,106 @@ class Driver {
         name: asString(json['name']),
         phone: asString(json['phone']),
         email: asString(json['email']),
-        isPhoneVerified: json['is_phone_verified'] == true,
+        photo: asString(json['photo']),
+        verificationStatus: asString(json['verification_status']),
+        statusDisplay: asString(json['status_display']),
+        verificationNote: asString(json['verification_note']),
+        isOnline: json['is_online'] == true,
+        vehicles: (json['vehicles'] as List? ?? const [])
+            .map((item) => DriverVehicle.fromJson(asMap(item)))
+            .toList(),
+        documents: (json['documents'] as List? ?? const [])
+            .map((item) => DriverDocument.fromJson(asMap(item)))
+            .toList(),
+        missingDocuments: asStringList(json['missing_documents']),
       );
 
   final int id;
   final String name;
   final String phone;
   final String email;
-  final bool isPhoneVerified;
+  final String photo;
+  final String verificationStatus;
+  final String statusDisplay;
+  final String verificationNote;
+  final bool isOnline;
+  final List<DriverVehicle> vehicles;
+  final List<DriverDocument> documents;
+  final List<String> missingDocuments;
 
-  String get displayName => name.isNotEmpty ? name : phone;
+  bool get isApproved => verificationStatus == 'approved';
+  bool get isSuspended => verificationStatus == 'suspended';
+
+  DriverVehicle? get van =>
+      vehicles.isEmpty ? null : vehicles.firstWhere((v) => v.isPrimary, orElse: () => vehicles.first);
+
+  /// What still stands between this driver and their first job (section 8).
+  bool get onboardingComplete =>
+      name.isNotEmpty && vehicles.isNotEmpty && missingDocuments.isEmpty;
+}
+
+class DriverVehicle {
+  const DriverVehicle({
+    required this.id,
+    required this.plate,
+    required this.displayPlate,
+    required this.description,
+    required this.make,
+    required this.model,
+    required this.colour,
+    required this.isPrimary,
+  });
+
+  factory DriverVehicle.fromJson(Map<String, dynamic> json) => DriverVehicle(
+        id: asInt(json['id']),
+        plate: asString(json['plate']),
+        displayPlate: asString(json['display_plate']),
+        description: asString(json['description']),
+        make: asString(json['make']),
+        model: asString(json['model']),
+        colour: asString(json['colour']),
+        isPrimary: json['is_primary'] == true,
+      );
+
+  final int id;
+  final String plate;
+  final String displayPlate;
+  final String description;
+  final String make;
+  final String model;
+  final String colour;
+  final bool isPrimary;
+}
+
+class DriverDocument {
+  const DriverDocument({
+    required this.id,
+    required this.documentType,
+    required this.typeDisplay,
+    required this.expiryDate,
+    required this.status,
+    required this.reviewNote,
+    required this.isExpired,
+    required this.daysToExpiry,
+  });
+
+  factory DriverDocument.fromJson(Map<String, dynamic> json) => DriverDocument(
+        id: asInt(json['id']),
+        documentType: asString(json['document_type']),
+        typeDisplay: asString(json['type_display']),
+        expiryDate: asDate(json['expiry_date']),
+        status: asString(json['status']),
+        reviewNote: asString(json['review_note']),
+        isExpired: json['is_expired'] == true,
+        daysToExpiry: asInt(json['days_to_expiry']),
+      );
+
+  final int id;
+  final String documentType;
+  final String typeDisplay;
+  final DateTime? expiryDate;
+  final String status;
+  final String reviewNote;
+  final bool isExpired;
+  final int daysToExpiry;
 }

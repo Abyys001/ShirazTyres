@@ -11,9 +11,11 @@ import type { Vehicle } from "@/types/api";
 export default function LookupPage() {
   const [plate, setPlate] = useState("");
 
+  // The staff endpoint, not the public one: it answers for a plate the office has
+  // never seen, it is not throttled at the anonymous rate, and it can force a refresh.
   const lookup = useMutation({
     mutationFn: (registration: string) =>
-      api<Vehicle>(`/vehicle-lookup/${encodeURIComponent(registration.replace(/\s/g, ""))}`),
+      api<Vehicle>(`/vehicles/${encodeURIComponent(registration.replace(/\s/g, ""))}`),
   });
 
   const vehicle = lookup.data;
@@ -62,7 +64,7 @@ export default function LookupPage() {
             <Detail label="MOT" value={`${vehicle.mot_status || "—"} ${vehicle.mot_expiry_date ?? ""}`} />
           </dl>
 
-          <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-5 rounded-md border border-line bg-surface-raised p-4">
             <h3 className="text-sm font-semibold">Tyres</h3>
             <dl className="mt-3 grid gap-4 sm:grid-cols-2">
               <Detail label="Front" value={vehicle.tyre_size_front || "unknown"} />
@@ -81,10 +83,10 @@ export default function LookupPage() {
               />
             </dl>
 
-            {vehicle.tyre_size_options.length > 1 ? (
+            {vehicle.is_fitment_ambiguous || vehicle.tyre_size_options.length > 1 ? (
               <p className="mt-3 text-xs text-ink-muted">
                 Other fitments recorded for this model: {vehicle.tyre_size_options.join(", ")}. Confirm with the
-                driver before ordering — trims differ.
+                customer before ordering — trims differ (section 9.3).
               </p>
             ) : null}
 

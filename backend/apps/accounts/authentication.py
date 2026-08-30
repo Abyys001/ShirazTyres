@@ -2,13 +2,15 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
 
-from .models import Driver, StaffUser
-from .tokens import SCOPE_CLAIM, SCOPE_DRIVER, SCOPE_STAFF, SUBJECT_CLAIM
+from .models import Customer, StaffUser
+from .tokens import SCOPE_CLAIM, SCOPE_CUSTOMER, SCOPE_DRIVER, SCOPE_STAFF, SUBJECT_CLAIM
 
 
 class ScopedJWTAuthentication(JWTAuthentication):
     scope: str = ""
-    model = None
+
+    def get_model(self):
+        raise NotImplementedError
 
     def authenticate(self, request):
         header = self.get_header(request)
@@ -30,9 +32,10 @@ class ScopedJWTAuthentication(JWTAuthentication):
         except KeyError as exc:
             raise InvalidToken(_("Token contained no recognisable subject.")) from exc
 
+        model = self.get_model()
         try:
-            subject = self.model.objects.get(pk=subject_id)
-        except self.model.DoesNotExist as exc:
+            subject = model.objects.get(pk=subject_id)
+        except model.DoesNotExist as exc:
             raise AuthenticationFailed(_("Account not found."), code="user_not_found") from exc
 
         if not subject.is_active:
@@ -42,9 +45,23 @@ class ScopedJWTAuthentication(JWTAuthentication):
 
 class StaffJWTAuthentication(ScopedJWTAuthentication):
     scope = SCOPE_STAFF
-    model = StaffUser
+
+    def get_model(self):
+        return StaffUser
+
+
+class CustomerJWTAuthentication(ScopedJWTAuthentication):
+    scope = SCOPE_CUSTOMER
+
+    def get_model(self):
+        return Customer
 
 
 class DriverJWTAuthentication(ScopedJWTAuthentication):
     scope = SCOPE_DRIVER
-    model = Driver
+
+    def get_model(self):
+        # Imported lazily: apps.drivers imports this module's siblings at load time.
+        from apps.drivers.models import Driver
+
+        return Driver

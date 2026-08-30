@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Driver, OtpCode, StaffUser
+from .models import Customer, OtpCode, SocialIdentity, StaffUser
 
 
 @admin.register(StaffUser)
@@ -20,11 +20,18 @@ class StaffUserAdmin(UserAdmin):
     )
 
 
-@admin.register(Driver)
-class DriverAdmin(admin.ModelAdmin):
-    list_display = ("phone", "name", "is_phone_verified", "is_active", "created_at")
-    list_filter = ("is_phone_verified", "is_active")
+class SocialIdentityInline(admin.TabularInline):
+    model = SocialIdentity
+    extra = 0
+    readonly_fields = ("provider", "subject", "email", "created_at", "last_used_at")
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("display_name", "phone", "email", "is_phone_verified", "is_active", "created_at")
+    list_filter = ("is_phone_verified", "is_email_verified", "is_active")
     search_fields = ("phone", "name", "email")
+    inlines = [SocialIdentityInline]
 
 
 @admin.register(OtpCode)

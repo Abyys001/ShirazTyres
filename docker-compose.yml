@@ -28,10 +28,13 @@ services:
     build: ./backend
     env_file: .env
     entrypoint: ["/app/entrypoint.sh"]
-    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    # Daphne, not runserver: the panel map, the customer ETA feed and the driver
+    # offer stream are all WebSocket, and WSGI cannot carry them.
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
     volumes:
       - ./backend:/app
       - static_files:/app/staticfiles
+      - media_files:/app/media
     ports:
       - "8000:8000"
     depends_on:
@@ -46,6 +49,7 @@ services:
     command: ["celery", "-A", "config", "worker", "-l", "info"]
     volumes:
       - ./backend:/app
+      - media_files:/app/media
     depends_on:
       - backend
       - redis
@@ -53,6 +57,7 @@ services:
   beat:
     build: ./backend
     env_file: .env
+    # Dispatch timeouts, document expiry and location retention all run from here.
     command: ["celery", "-A", "config", "beat", "-l", "info"]
     volumes:
       - ./backend:/app
@@ -69,6 +74,7 @@ services:
       # talks to the API directly (it goes through the panel's proxy route).
       API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://backend:8000/api/v1}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000/ws}
     volumes:
       - ./panel:/app
       - /app/node_modules
@@ -79,6 +85,30 @@ services:
     depends_on:
       - backend
 
+  website:
+    # The customer-facing site — phase 2. Separate from the panel so it can be
+    # deployed, scaled and cached on its own.
+    build:
+      context: ./website
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://backend:8000/api/v1}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000/ws}
+      NEXT_PUBLIC_MAP_TILE_URL: ${MAP_TILE_URL:-}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_WEB_CLIENT_ID:-}
+    volumes:
+      - ./website:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3001:3000"
+    command: ["npm", "run", "dev"]
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
   static_files:
+  media_files:

@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (signedIn && pathname === "/login") {
-    return NextResponse.redirect(new URL("/bookings", request.url));
+    return NextResponse.redirect(new URL("/jobs", request.url));
   }
 
   return NextResponse.next();
