@@ -181,3 +181,47 @@ def test_a_window_running_past_midnight_is_understood():
 
     assert is_open_at(late) is True
     assert is_open_at(afternoon) is False
+
+
+# --------------------------------------------------------------- audit log ----
+
+
+def test_settings_change_is_logged_with_both_values(staff_client):
+    """"It used to work" is nearly always a setting — keep the before and after."""
+    from apps.audit.models import AuditEvent
+
+    response = staff_client.patch(
+        "/api/v1/settings", {"values": {"pricing.callout_fee": "42.00"}}, format="json"
+    )
+    assert response.status_code == 200, response.data
+    event = AuditEvent.objects.filter(category="settings", subject_id="pricing.callout_fee").first()
+    assert event is not None
+    assert "previous" in event.payload and "value" in event.payload
+
+
+def test_otp_code_is_logged_only_while_sms_is_mocked(api, settings):
+    """Section: the code is already public under the mock provider, never under a real one."""
+    from apps.audit.models import AuditEvent
+
+    settings.SMS_PROVIDER = "twilio"
+    api.post("/api/v1/auth/otp/request", {"phone": "07700900123", "purpose": "login"}, format="json")
+    event = AuditEvent.objects.filter(category="auth").first()
+    assert event is not None
+    assert event.payload["code"] == "[not recorded — live SMS provider]"
+
+
+def test_audit_payloads_never_keep_secrets():
+    from apps.audit.services import record
+
+    event = record(
+        "system", "test", api_key="sk_live_abc", password="hunter2", nested={"stripe_secret": "x"}
+    )
+    assert event.payload["api_key"] == "[redacted]"
+    assert event.payload["password"] == "[redacted]"
+    assert event.payload["nested"]["stripe_secret"] == "[redacted]"
+
+
+def test_logs_and_health_are_staff_only(api, customer_client):
+    for path in ("/api/v1/logs", "/api/v1/health"):
+        assert api.get(path).status_code in (401, 403)
+        assert customer_client.get(path).status_code in (401, 403, 404)

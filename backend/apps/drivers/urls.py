@@ -10,6 +10,7 @@ from .views import (
     DriverMeView,
     DriverOnlineView,
     DriverOtpVerifyView,
+    DriverVehicleLookupView,
     DriverVehicleViewSet,
     DriverViewSet,
 )
@@ -24,6 +25,11 @@ urlpatterns = [
     path("driver/me", DriverMeView.as_view(), name="driver-me"),
     path("driver/online", DriverOnlineView.as_view(), name="driver-online"),
     path("driver/location", DriverLocationView.as_view(), name="driver-location"),
+    path(
+        "driver/vehicle-lookup/<str:plate>",
+        DriverVehicleLookupView.as_view(),
+        name="driver-vehicle-lookup",
+    ),
     path("drivers/map", DriverMapView.as_view(), name="driver-map"),
     path("drivers/compliance", DriverComplianceView.as_view(), name="driver-compliance"),
     path("driver-documents/<int:pk>/review", DocumentReviewView.as_view(), name="document-review"),

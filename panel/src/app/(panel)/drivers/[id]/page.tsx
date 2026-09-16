@@ -18,7 +18,14 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/client-api";
 import { formatDate, formatDateTime } from "@/lib/format";
-import type { Driver, DriverDocument, Paginated, ServiceArea, VerificationStatus } from "@/types/api";
+import type {
+  Driver,
+  DriverDocument,
+  DriverLocationFix,
+  Paginated,
+  ServiceArea,
+  VerificationStatus,
+} from "@/types/api";
 
 export default function DriverPage() {
   const params = useParams<{ id: string }>();
@@ -36,6 +43,13 @@ export default function DriverPage() {
   const areas = useQuery({
     queryKey: ["service-areas"],
     queryFn: () => api<Paginated<ServiceArea>>("/service-areas"),
+  });
+
+  // The card below promised a history the page never fetched. It is the record
+  // the office reaches for when a customer disputes where a van was and when.
+  const history = useQuery({
+    queryKey: ["driver-history", id],
+    queryFn: () => api<DriverLocationFix[]>(`/drivers/${id}/location-history`),
   });
 
   const setVerification = useMutation({
@@ -248,6 +262,29 @@ export default function DriverPage() {
             <p className="mt-3 text-xs text-ink-subtle">
               Location history is kept for the configured retention period and then purged (section 18).
             </p>
+
+            {history.data && history.data.length > 0 ? (
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+                  Recent fixes
+                </p>
+                <ul className="max-h-64 space-y-1 overflow-y-auto font-mono text-xs text-ink-muted">
+                  {history.data.map((fix) => (
+                    <li key={fix.id} className="flex justify-between gap-3">
+                      <span className="text-ink">{formatDateTime(fix.recorded_at)}</span>
+                      <span>
+                        {fix.latitude}, {fix.longitude}
+                        {fix.accuracy_m !== null ? ` ±${fix.accuracy_m}m` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-ink-subtle">
+                {history.isLoading ? "Loading history…" : "No fixes recorded for this driver yet."}
+              </p>
+            )}
           </Card>
         </div>
       </div>

@@ -131,6 +131,18 @@ class DriverVehicle(models.Model):
     colour = models.CharField(max_length=32, blank=True)
     year_of_manufacture = models.PositiveSmallIntegerField(null=True, blank=True)
     is_primary = models.BooleanField(default=True)
+
+    # Kept on the van rather than looked up on every screen: a technician in a
+    # basement car park still gets to see when their MOT runs out.
+    fuel_type = models.CharField(max_length=32, blank=True)
+    engine_capacity = models.PositiveIntegerField(null=True, blank=True, help_text="cc")
+    co2_emissions = models.PositiveIntegerField(null=True, blank=True)
+    tax_status = models.CharField(max_length=32, blank=True)
+    tax_due_date = models.DateField(null=True, blank=True)
+    mot_status = models.CharField(max_length=32, blank=True)
+    mot_expiry_date = models.DateField(null=True, blank=True)
+    dvla_fetched_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -150,6 +162,19 @@ class DriverVehicle(models.Model):
     @property
     def description(self) -> str:
         return " ".join(part for part in (self.colour, self.make, self.model) if part)
+
+    @property
+    def mot_days_remaining(self) -> int | None:
+        """Negative once it has lapsed, which is the number that matters."""
+        if not self.mot_expiry_date:
+            return None
+        return (self.mot_expiry_date - timezone.localdate()).days
+
+    @property
+    def tax_days_remaining(self) -> int | None:
+        if not self.tax_due_date:
+            return None
+        return (self.tax_due_date - timezone.localdate()).days
 
 
 class DriverDocument(models.Model):

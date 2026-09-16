@@ -7,6 +7,8 @@ import { useCallback, useState } from "react";
 
 import { DispatchCard } from "@/components/dispatch-card";
 import { InvoiceCard } from "@/components/invoice-card";
+import { JobEditForm, StatusOverride } from "@/components/job-edit-form";
+import { TyreDamage } from "@/components/tyre-damage";
 import {
   Button,
   Card,
@@ -15,15 +17,15 @@ import {
   ErrorNote,
   Field,
   Input,
-  LiveDot,
   Pill,
+  Plate,
   Select,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
 import { api } from "@/lib/client-api";
 import { distance, eta, formatDateTime, timeAgo } from "@/lib/format";
-import { usePanelFeed } from "@/lib/ws";
+import { useLiveStatus } from "@/lib/ws";
 import type { JobDetail, JobStatus } from "@/types/api";
 import { NEXT_STATUSES, STATUS_LABELS } from "@/types/api";
 
@@ -32,18 +34,9 @@ export default function JobDetailPage() {
   const id = Number(params.id);
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
+  const [editing, setEditing] = useState(false);
 
-  const connected = usePanelFeed(
-    useCallback(
-      (event) => {
-        const payload = event.job as { id?: number } | undefined;
-        if (event.event.startsWith("job.") && payload?.id === id) {
-          void queryClient.invalidateQueries({ queryKey: ["job", id] });
-        }
-      },
-      [id, queryClient],
-    ),
-  );
+  const connected = useLiveStatus();
 
   const job = useQuery({
     queryKey: ["job", id],
@@ -69,40 +62,54 @@ export default function JobDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["job", id] }),
   });
 
-  if (job.isLoading) return <EmptyState>Loading…</EmptyState>;
-  if (job.isError || !job.data) return <EmptyState>Could not load this job.</EmptyState>;
+  if (job.isLoading) return <EmptyState>Loading this job…</EmptyState>;
+  if (job.isError || !job.data)
+    return <EmptyState>This job could not be loaded. It may have been deleted.</EmptyState>;
 
   const data = job.data;
   const overridden = data.tyre_confirmation_path === "overridden";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link href="/jobs" className="text-sm text-ink-muted hover:underline">
-            ← Jobs
-          </Link>
-          <h1 className="text-lg font-semibold">{data.reference}</h1>
+      <div className="space-y-3">
+        <Link href="/jobs" className="text-sm text-ink-muted hover:underline">
+          Back to jobs
+        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Plate value={data.vehicle?.display_plate || data.plate} size="lg" />
+          <h1 className="font-display text-xl font-semibold tracking-tight">{data.reference}</h1>
           <StatusBadge status={data.status} label={STATUS_LABELS[data.status]} />
-          <Pill className="chip-muted">{data.source}</Pill>
+          <Pill className="chip-muted">came in by {data.source}</Pill>
         </div>
-        <LiveDot connected={connected} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card title="Call-out">
-            <dl className="grid gap-4 sm:grid-cols-3">
-              <Detail label="Customer" value={data.contact_name} />
-              <Detail label="Phone" value={<a href={`tel:${data.contact_phone}`}>{data.contact_phone}</a>} />
-              <Detail label="Email" value={data.contact_email} />
-              <Detail label="Issue" value={data.issue_label} />
-              <Detail label="Vehicle" value={data.vehicle?.description || data.plate} />
-              <Detail label="Registration" value={data.vehicle?.display_plate || data.plate} />
-              <div className="sm:col-span-3">
-                <Detail label="Notes from the customer" value={data.description} />
-              </div>
-            </dl>
+          <Card
+            title="Call-out"
+            action={
+              editing ? null : (
+                <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              )
+            }
+          >
+            {editing ? (
+              <JobEditForm job={data} onDone={() => setEditing(false)} />
+            ) : (
+              <dl className="grid gap-4 sm:grid-cols-3">
+                <Detail label="Customer" value={data.contact_name} />
+                <Detail label="Phone" value={<a href={`tel:${data.contact_phone}`}>{data.contact_phone}</a>} />
+                <Detail label="Email" value={data.contact_email} />
+                <Detail label="Issue" value={data.issue_label} />
+                <Detail label="Vehicle" value={data.vehicle?.description || "not identified"} />
+                <Detail label="Came in by" value={data.source} />
+                <div className="sm:col-span-3">
+                  <Detail label="Notes from the customer" value={data.description} />
+                </div>
+              </dl>
+            )}
           </Card>
 
           <Card title="Tyre specification">
@@ -111,6 +118,14 @@ export default function JobDetailPage() {
               <Detail label="Looked up" value={data.looked_up_tyre_size} />
               <Detail label="Customer supplied" value={data.customer_tyre_size} />
             </dl>
+
+            {/* Which wheel the customer marked — what the van is loaded from. */}
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-ink-subtle">
+                Which tyre
+              </p>
+              <TyreDamage damaged={data.damaged_positions} />
+            </div>
             {overridden ? (
               <p className="mt-3 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
                 The customer declined the looked-up specification and accepted responsibility for the size they
@@ -212,6 +227,7 @@ export default function JobDetailPage() {
                 ) : null}
               </div>
               {setStatus.isError ? <ErrorNote>{setStatus.error.message}</ErrorNote> : null}
+              <StatusOverride job={data} />
             </div>
           </Card>
 

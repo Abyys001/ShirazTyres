@@ -1,11 +1,14 @@
 "use client";
 
-import type {
-  ButtonHTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
+import {
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 
 import type { DocumentStatus, InvoiceStatus, JobStatus, VerificationStatus } from "@/types/api";
@@ -72,7 +75,7 @@ export function Field({
 }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</span>
+      <span className="text-sm font-medium text-ink-muted">{label}</span>
       {children}
       {hint ? <span className="block text-xs text-ink-subtle">{hint}</span> : null}
       {error ? <span className="block text-xs text-brand">{error}</span> : null}
@@ -90,11 +93,11 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-line bg-surface shadow-sm">
+    <section className="rounded-lg border border-line bg-surface">
       {title ? (
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {action}
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h2 className="font-display text-base font-semibold tracking-tight">{title}</h2>
+          {action ? <div className="flex flex-shrink-0 items-center">{action}</div> : null}
         </header>
       ) : null}
       <div className="p-4">{children}</div>
@@ -116,8 +119,19 @@ const JOB_STATUS_STYLES: Record<JobStatus, string> = {
   unclaimed: "chip-danger",
 };
 
-export function StatusBadge({ status, label }: { status: JobStatus; label: string }) {
-  return <Pill className={JOB_STATUS_STYLES[status]}>{label}</Pill>;
+/**
+ * An unknown status still has to be visible.
+ *
+ * A value the panel does not recognise — a row left behind by an older schema,
+ * or a status added to the API before the panel caught up — used to resolve to
+ * no chip class and no label, and drew an empty cell. On this board an empty
+ * status cell reads as "nothing to do here", which is the one conclusion it must
+ * never invite. It gets the muted chip and its own raw value instead, so it is
+ * legible as something to go and look at.
+ */
+export function StatusBadge({ status, label }: { status: JobStatus; label?: string }) {
+  const style = JOB_STATUS_STYLES[status] ?? "chip-muted";
+  return <Pill className={style}>{label || status || "unknown"}</Pill>;
 }
 
 const VERIFICATION_STYLES: Record<VerificationStatus, string> = {
@@ -166,19 +180,23 @@ export function Stat({
 }: {
   label: string;
   value: number;
-  tone?: "default" | "alert";
+  tone?: "default" | "alert" | "good";
   href?: string;
 }) {
+  const alarmed = tone === "alert" && value > 0;
+  const changed = useValueChanged(value);
+
+  const colour = alarmed ? "text-danger" : tone === "good" && value > 0 ? "text-success" : "text-ink";
+  const flash = changed ? (alarmed ? "count-changed-alarm" : "count-changed") : "";
+
   const body = (
-    <div className="rounded-lg border border-line bg-surface p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone === "alert" && value > 0 ? "text-brand" : "text-ink"}`}>
-        {value}
-      </p>
+    <div className={`rounded-md px-4 py-3 ${flash}`}>
+      <p className={`count ${colour}`}>{value}</p>
+      <span className="count-label">{label}</span>
     </div>
   );
   return href ? (
-    <a href={href} className="block transition hover:opacity-80">
+    <a href={href} className="block rounded-md transition hover:bg-surface-raised">
       {body}
     </a>
   ) : (
@@ -186,19 +204,82 @@ export function Stat({
   );
 }
 
+/**
+ * True for one beat after `value` moves.
+ *
+ * A count that changes while nobody is looking at it changes silently, and on a
+ * wallboard that is most of the time. The flash is the whole point of the hook:
+ * it is a single pass, not a loop, so it catches an eye that was elsewhere and
+ * then stops rather than becoming part of the furniture. The first render never
+ * flashes — arriving at the page is not a change.
+ */
+function useValueChanged(value: number, ms = 1100): boolean {
+  const previous = useRef<number | null>(null);
+  const [changed, setChanged] = useState(false);
+
+  useEffect(() => {
+    const had = previous.current;
+    previous.current = value;
+    if (had === null || had === value) return;
+
+    setChanged(true);
+    const timer = window.setTimeout(() => setChanged(false), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+
+  return changed;
+}
+
+/**
+ * The counts, as one ruled strip rather than a row of identical cards.
+ *
+ * Six bordered boxes gave a stranded motorist the same weight as the number of
+ * vans on shift. Hairlines between figures cost nothing, and they let the one
+ * number that is an alarm be the only one wearing a colour.
+ *
+ * `inset` drops the strip's own border and corners for when it sits inside a
+ * container that already has them — the dispatch hero — so the two do not draw
+ * a double rule between the alarm and the counts.
+ */
+export function StatStrip({ children, inset = false }: { children: ReactNode; inset?: boolean }) {
+  const frame = inset ? "h-full" : "rounded-lg border border-line";
+  return (
+    <div
+      className={`grid grid-cols-2 divide-y divide-line bg-surface sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:grid-cols-5 ${frame}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A registration, drawn as the plate it is — black on the brand yellow, which is
+ * the one gold fill on the board and so the thing the eye lands on first.
+ * `size="lg"` is for a job's own page, where the plate heads the record.
+ */
+export function Plate({ value, size = "sm" }: { value: string | null | undefined; size?: "sm" | "lg" }) {
+  const plate = (value ?? "").trim().toUpperCase();
+  const classes = `plate ${size === "lg" ? "plate-lg" : ""} ${plate ? "" : "plate-empty"}`;
+  return <span className={classes}>{plate || "no plate"}</span>;
+}
+
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="py-10 text-center text-sm text-ink-subtle">{children}</p>;
+  return <div className="py-12 text-center text-sm text-ink-subtle">{children}</div>;
 }
 
 export function ErrorNote({ children }: { children: ReactNode }) {
-  return <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">{children}</p>;
+  return (
+    <p className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+      {children}
+    </p>
+  );
 }
 
 export function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm">{value || "—"}</dd>
+      <dt className="text-xs text-ink-subtle">{label}</dt>
+      <dd className="mt-0.5 text-sm text-ink">{value || "—"}</dd>
     </div>
   );
 }
@@ -211,16 +292,4 @@ export function AlertBanner({ children, href }: { children: ReactNode; href?: st
     </div>
   );
   return href ? <a href={href}>{content}</a> : content;
-}
-
-export function LiveDot({ connected }: { connected: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-      <span
-        className={`h-2 w-2 rounded-full ${connected ? "bg-success" : "bg-line-strong"}`}
-        aria-hidden
-      />
-      {connected ? "Live" : "Reconnecting…"}
-    </span>
-  );
 }

@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- App Transport Security blocks plain HTTP, which is what stopped the simulator
+	     reaching the development API on http://localhost:8000. NSAllowsLocalNetworking
+	     excuses loopback and .local only; everything off-device still has to be HTTPS. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ShirazTyres sends you the job nearest to you, and tells the customer how long you will be.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
@@ -79,8 +87,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We use your location to send a fitter straight to your vehicle.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>

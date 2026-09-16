@@ -69,6 +69,16 @@ class DriverVehicle {
     required this.make,
     required this.model,
     required this.colour,
+    required this.year,
+    required this.fuelType,
+    required this.engineCapacity,
+    required this.taxStatus,
+    required this.taxDueDate,
+    required this.taxDaysRemaining,
+    required this.motStatus,
+    required this.motExpiryDate,
+    required this.motDaysRemaining,
+    required this.checkedAt,
     required this.isPrimary,
   });
 
@@ -80,6 +90,19 @@ class DriverVehicle {
         make: asString(json['make']),
         model: asString(json['model']),
         colour: asString(json['colour']),
+        year: json['year_of_manufacture'] == null ? null : asInt(json['year_of_manufacture']),
+        fuelType: asString(json['fuel_type']),
+        engineCapacity:
+            json['engine_capacity'] == null ? null : asInt(json['engine_capacity']),
+        taxStatus: asString(json['tax_status']),
+        taxDueDate: asDate(json['tax_due_date']),
+        taxDaysRemaining:
+            json['tax_days_remaining'] == null ? null : asInt(json['tax_days_remaining']),
+        motStatus: asString(json['mot_status']),
+        motExpiryDate: asDate(json['mot_expiry_date']),
+        motDaysRemaining:
+            json['mot_days_remaining'] == null ? null : asInt(json['mot_days_remaining']),
+        checkedAt: asDate(json['dvla_fetched_at']),
         isPrimary: json['is_primary'] == true,
       );
 
@@ -90,7 +113,28 @@ class DriverVehicle {
   final String make;
   final String model;
   final String colour;
+  final int? year;
+  final String fuelType;
+  final int? engineCapacity;
+  final String taxStatus;
+  final DateTime? taxDueDate;
+
+  /// Negative once it has lapsed, which is the number that matters.
+  final int? taxDaysRemaining;
+  final String motStatus;
+  final DateTime? motExpiryDate;
+  final int? motDaysRemaining;
+  final DateTime? checkedAt;
   final bool isPrimary;
+
+  String get title => description.isNotEmpty ? description : displayPlate;
+
+  /// Anything DVLA has told us that is about to stop this van being legal. The
+  /// screen leads with these, because they are the only part a driver can act
+  /// on before it costs them a shift.
+  bool get needsAttention =>
+      (motDaysRemaining != null && motDaysRemaining! <= 30) ||
+      (taxDaysRemaining != null && taxDaysRemaining! <= 30);
 }
 
 class DriverDocument {

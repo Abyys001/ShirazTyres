@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsOwner, IsStaff
 from apps.configuration.services import get_setting
+from apps.realtime.mixins import AnnouncesConfigChange
 
 from .models import ServiceArea
 from .serializers import CoverageCheckSerializer, CoverageResultSerializer, ServiceAreaSerializer
@@ -14,7 +15,9 @@ from .services import find_area, invalidate_cache, is_covered
 
 
 @extend_schema(tags=["service-areas"])
-class ServiceAreaViewSet(viewsets.ModelViewSet):
+class ServiceAreaViewSet(AnnouncesConfigChange, viewsets.ModelViewSet):
+    config_kind = "service-areas"
+
     queryset = ServiceArea.objects.annotate(driver_count=Count("drivers"))
     serializer_class = ServiceAreaSerializer
     filterset_fields = ["is_active"]
@@ -26,15 +29,15 @@ class ServiceAreaViewSet(viewsets.ModelViewSet):
         return [IsStaff()] if self.request.method in ("GET", "HEAD", "OPTIONS") else [IsOwner()]
 
     def perform_create(self, serializer):
-        serializer.save()
+        super().perform_create(serializer)
         invalidate_cache()
 
     def perform_update(self, serializer):
-        serializer.save()
+        super().perform_update(serializer)
         invalidate_cache()
 
     def perform_destroy(self, instance):
-        instance.delete()
+        super().perform_destroy(instance)
         invalidate_cache()
 
 

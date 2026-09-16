@@ -17,6 +17,21 @@ class IsOwner(BasePermission):
         return isinstance(request.user, StaffUser) and request.user.is_active and request.user.is_owner
 
 
+class IsAdminStaff(BasePermission):
+    """
+    Owner or shop owner.
+
+    Sits between ``IsStaff`` and ``IsOwner``: the office can work the board all
+    day, but changing settings, creating staff accounts or voiding money is a
+    different kind of act and belongs to whoever answers for the business.
+    """
+
+    message = "Owner or shop owner role required."
+
+    def has_permission(self, request, view):
+        return isinstance(request.user, StaffUser) and request.user.is_active and request.user.is_admin
+
+
 class IsCustomer(BasePermission):
     message = "Customer authentication required."
 

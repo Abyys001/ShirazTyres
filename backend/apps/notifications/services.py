@@ -12,12 +12,43 @@ from .providers import ProviderError, get_push_provider, get_sms_provider
 logger = logging.getLogger(__name__)
 
 
+#: Which log category each channel writes under, so the panel can filter to
+#: "show me the email" without knowing anything about Notification.Channel.
+_AUDIT_CATEGORY = {
+    Notification.Channel.SMS: "sms",
+    Notification.Channel.EMAIL: "email",
+    Notification.Channel.PUSH: "push",
+}
+
+
 def _finish(notification: Notification, *, message_id: str = "", error: str = "") -> Notification:
     notification.status = Notification.Status.FAILED if error else Notification.Status.SENT
     notification.provider_message_id = message_id
     notification.error = error[:255]
     notification.sent_at = timezone.now()
     notification.save(update_fields=["status", "provider_message_id", "error", "sent_at"])
+
+    # Every channel funnels through here, so one hook logs the lot. The
+    # Notification row remains the record of *what was sent*; this is the
+    # operational trail of whether the send actually worked.
+    from apps.audit.models import AuditEvent
+    from apps.audit.services import record
+
+    record(
+        _AUDIT_CATEGORY.get(notification.channel, "system"),
+        f"{notification.get_channel_display()} to {notification.recipient} "
+        f"{'failed' if error else 'sent'}",
+        severity=AuditEvent.Severity.ERROR if error else AuditEvent.Severity.INFO,
+        actor="system",
+        subject_type="notification",
+        subject_id=notification.pk,
+        recipient=notification.recipient,
+        event=notification.event,
+        subject=notification.subject,
+        provider_message_id=message_id,
+        error=error,
+        job_id=notification.job_id,
+    )
     return notification
 
 

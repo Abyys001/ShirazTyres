@@ -1,3 +1,4 @@
+import 'damaged_tyre.dart';
 import 'invoice.dart';
 import 'json.dart';
 import 'vehicle.dart';
@@ -67,6 +68,7 @@ class Job {
     required this.customerTyreSize,
     required this.confirmationPath,
     required this.correctedOnSite,
+    required this.damaged,
     required this.locationText,
     required this.latitude,
     required this.longitude,
@@ -92,6 +94,10 @@ class Job {
         customerTyreSize: asString(json['customer_tyre_size']),
         confirmationPath: asString(json['tyre_confirmation_path']),
         correctedOnSite: json['tyre_corrected_on_site'] == true,
+        damaged: asList(json['damaged_positions'])
+            .map((entry) => DamagedTyre.fromJson(asMap(entry)))
+            .whereType<DamagedTyre>()
+            .toList(growable: false),
         locationText: asString(json['location_text']),
         latitude: asDouble(json['latitude']),
         longitude: asDouble(json['longitude']),
@@ -116,6 +122,9 @@ class Job {
   final String customerTyreSize;
   final String confirmationPath;
   final bool correctedOnSite;
+
+  /// Which wheels the customer said had gone. The van is loaded from this.
+  final List<DamagedTyre> damaged;
   final String locationText;
   final double? latitude;
   final double? longitude;
@@ -125,6 +134,10 @@ class Job {
   final String mapsUrl;
   final Invoice? invoice;
   final DateTime? createdAt;
+
+  /// Rows seeded before the label was recorded come back with it empty. A
+  /// headline is the largest thing on the card, so it never renders blank.
+  String get issueHeadline => issueLabel.isEmpty ? 'Tyre call-out' : issueLabel;
 
   /// Section 4.3 path B — the customer gave this size themselves and accepted
   /// responsibility for it. Worth knowing before loading the van.

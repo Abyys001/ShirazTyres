@@ -1,23 +1,22 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
+import { DispatchHero } from "@/components/dispatch-hero";
 import { NewJobForm } from "@/components/new-job-form";
 import {
-  AlertBanner,
   Button,
   Card,
   EmptyState,
-  LiveDot,
+  Plate,
   Select,
-  Stat,
   StatusBadge,
 } from "@/components/ui";
 import { api } from "@/lib/client-api";
 import { eta, timeAgo } from "@/lib/format";
-import { usePanelFeed } from "@/lib/ws";
+import { useLiveStatus } from "@/lib/ws";
 import type { Job, JobStats, JobStatus, Paginated } from "@/types/api";
 import { STATUS_LABELS } from "@/types/api";
 
@@ -43,20 +42,9 @@ function query(filter: string) {
 export default function JobsPage() {
   const [filter, setFilter] = useState("open");
   const [creating, setCreating] = useState(false);
-  const queryClient = useQueryClient();
 
-  // The socket carries every change; the poll is the safety net if it drops.
-  const connected = usePanelFeed(
-    useCallback(
-      (event) => {
-        if (event.event.startsWith("job.")) {
-          void queryClient.invalidateQueries({ queryKey: ["jobs"] });
-          void queryClient.invalidateQueries({ queryKey: ["job-stats"] });
-        }
-      },
-      [queryClient],
-    ),
-  );
+  // LiveSync carries every change; the poll is the safety net if the socket drops.
+  const connected = useLiveStatus();
 
   const jobs = useQuery({
     queryKey: ["jobs", filter],
@@ -70,36 +58,14 @@ export default function JobsPage() {
     refetchInterval: connected ? 60_000 : 15_000,
   });
 
-  const unclaimed = stats.data?.unclaimed ?? 0;
-
   return (
-    <div className="space-y-6">
-      {unclaimed > 0 ? (
-        <AlertBanner>
-          <span>
-            <strong>{unclaimed}</strong> job{unclaimed === 1 ? "" : "s"} nobody has taken. Assign a driver by
-            hand or start dispatch again.
-          </span>
-          <Button variant="secondary" size="sm" onClick={() => setFilter("unclaimed")}>
-            Show them
-          </Button>
-        </AlertBanner>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Submitted" value={stats.data?.submitted ?? 0} tone="alert" />
-        <Stat label="Finding a driver" value={stats.data?.dispatching ?? 0} />
-        <Stat label="On the way" value={(stats.data?.accepted ?? 0) + (stats.data?.en_route ?? 0)} />
-        <Stat label="In progress" value={stats.data?.in_progress ?? 0} />
-        <Stat label="Unclaimed" value={unclaimed} tone="alert" />
-        <Stat label="Drivers online" value={stats.data?.drivers_online ?? 0} />
-      </div>
+    <div className="space-y-5">
+      <DispatchHero stats={stats.data} onShowUnclaimed={() => setFilter("unclaimed")} />
 
       <Card
         title="Jobs"
         action={
           <div className="flex items-center gap-2">
-            <LiveDot connected={connected} />
             <Select value={filter} onChange={(event) => setFilter(event.target.value)} className="w-44">
               {FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -119,52 +85,77 @@ export default function JobsPage() {
           </div>
         ) : null}
 
-        {jobs.isLoading ? <EmptyState>Loading…</EmptyState> : null}
-        {jobs.isError ? <EmptyState>Could not load jobs.</EmptyState> : null}
+        {jobs.isLoading ? <EmptyState>Loading the board…</EmptyState> : null}
+        {jobs.isError ? (
+          <EmptyState>
+            The board could not be loaded. It will retry on its own; check the API if this stays.
+          </EmptyState>
+        ) : null}
         {jobs.data && jobs.data.results.length === 0 ? (
-          <EmptyState>Nothing here — no jobs match this filter.</EmptyState>
+          <EmptyState>
+            Nothing matches this filter. Every call-out is accounted for.
+          </EmptyState>
         ) : null}
 
         {jobs.data && jobs.data.results.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                <tr className="border-b border-line">
-                  <th className="py-2 pr-3">Reference</th>
-                  <th className="py-2 pr-3">Customer</th>
-                  <th className="py-2 pr-3">Vehicle</th>
-                  <th className="py-2 pr-3">Issue</th>
-                  <th className="py-2 pr-3">Location</th>
-                  <th className="py-2 pr-3">Driver</th>
-                  <th className="py-2 pr-3">ETA</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 pr-3">Received</th>
+          <div className="-mx-4 overflow-x-auto">
+            <table className="w-full min-w-[56rem] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-ink-subtle">
+                  <th className="py-2 pl-4 pr-3 font-medium">Job</th>
+                  <th className="py-2 pr-3 font-medium">Customer</th>
+                  <th className="py-2 pr-3 font-medium">Vehicle</th>
+                  <th className="py-2 pr-3 font-medium">Problem</th>
+                  <th className="py-2 pr-3 font-medium">Where</th>
+                  <th className="py-2 pr-3 font-medium">Driver</th>
+                  <th className="py-2 pr-3 text-right font-medium">ETA</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {jobs.data.results.map((job) => (
-                  <tr key={job.id} className="border-b border-line last:border-0 hover:bg-surface-raised">
-                    <td className="py-2 pr-3 font-medium">
-                      <Link href={`/jobs/${job.id}`} className="text-brand hover:underline">
+                  <tr
+                    key={job.id}
+                    className="border-b border-line align-top last:border-0 hover:bg-surface-raised"
+                  >
+                    {/* The rail is the cell, not its contents, so it runs the full height of the row. */}
+                    <td className={`py-2.5 pl-4 pr-3 ${treadFor(job.status)}`}>
+                      <Link
+                        href={`/jobs/${job.id}`}
+                        className="font-mono text-sm font-medium text-brand hover:underline"
+                      >
                         {job.reference}
                       </Link>
+                      <span className="mt-0.5 block text-xs text-ink-subtle">{timeAgo(job.created_at)}</span>
                     </td>
-                    <td className="py-2 pr-3">
-                      {job.contact_name}
-                      <span className="block text-xs text-ink-muted">{job.contact_phone}</span>
+                    <td className="py-2.5 pr-3">
+                      <span className="block text-ink">{job.contact_name}</span>
+                      <span className="block font-mono text-xs text-ink-subtle">{job.contact_phone}</span>
                     </td>
-                    <td className="py-2 pr-3">
-                      {job.plate || "—"}
-                      <span className="block text-xs text-ink-muted">{job.tyre_size || "size unknown"}</span>
+                    <td className="py-2.5 pr-3">
+                      <Plate value={job.plate} />
+                      <span className="mt-1 block font-mono text-xs text-ink-subtle">
+                        {job.tyre_size || "size not known"}
+                      </span>
                     </td>
-                    <td className="py-2 pr-3">{job.issue_label}</td>
-                    <td className="py-2 pr-3 max-w-[14rem] truncate">{job.location_text}</td>
-                    <td className="py-2 pr-3">{job.driver_name || "—"}</td>
-                    <td className="py-2 pr-3 text-xs">{eta(job.eta_minutes)}</td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2.5 pr-3 text-ink">
+                      {job.issue_label}
+                      {job.damaged_summary ? (
+                        <span className="mt-0.5 block text-xs text-ink-subtle">
+                          {job.damaged_summary}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="max-w-[16rem] truncate py-2.5 pr-3 text-ink-muted">{job.location_text}</td>
+                    <td className="py-2.5 pr-3 text-ink">
+                      {job.driver_name || <span className="text-ink-subtle">nobody yet</span>}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-ink">
+                      {eta(job.eta_minutes)}
+                    </td>
+                    <td className="py-2.5 pr-4">
                       <StatusBadge status={job.status as JobStatus} label={STATUS_LABELS[job.status]} />
                     </td>
-                    <td className="py-2 pr-3 text-xs text-ink-muted">{timeAgo(job.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -174,4 +165,17 @@ export default function JobsPage() {
       </Card>
     </div>
   );
+}
+
+/**
+ * The left edge of a row reads as tread, and its rhythm is the job's state:
+ * gold and tight while somebody is moving on it, red and gapped the moment
+ * nobody is, faint once it is closed. Scanning the edge answers "is anyone
+ * stranded" without reading a word.
+ */
+function treadFor(status: string): string {
+  if (status === "unclaimed") return "tread tread-alarm";
+  if (status === "completed" || status === "cancelled") return "tread tread-done";
+  if (status === "submitted" || status === "dispatching") return "tread";
+  return "tread tread-live";
 }

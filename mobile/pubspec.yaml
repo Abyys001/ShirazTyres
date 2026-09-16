@@ -27,3 +27,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/brand/
+
+  # Headings and body use the platform's own UI sans, so only the mono face is
+  # vendored (variable, instanced to these weights and subset to latin +
+  # latin-ext). See docs/design-tokens.md.
+  fonts:
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-500.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-700.ttf
+          weight: 700

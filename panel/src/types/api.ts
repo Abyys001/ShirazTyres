@@ -22,7 +22,7 @@ export type JobStatus =
   | "unclaimed";
 
 export type JobSource = "website" | "app" | "panel" | "phone";
-export type LocationSource = "device" | "browser" | "map_pin" | "staff";
+export type LocationSource = "device" | "browser" | "pin" | "staff";
 export type ConfirmationPath = "confirmed" | "overridden";
 export type DispatchMode = "automatic" | "selection";
 export type VerificationStatus = "pending" | "approved" | "rejected" | "suspended";
@@ -30,11 +30,21 @@ export type DocumentStatus = "pending" | "approved" | "rejected";
 export type InvoiceStatus = "draft" | "issued" | "paid" | "void";
 export type PaymentMethod = "unspecified" | "card_reader" | "payment_link" | "cash" | "other";
 
+export type TyrePosition = "front_left" | "front_right" | "rear_left" | "rear_right" | "spare";
+export type TyreSeverity = "flat" | "deflating" | "damaged" | "blowout";
+
+/** One damaged wheel, as `Job.damaged_positions` stores it. */
+export interface DamagedTyre {
+  position: TyrePosition;
+  severity?: TyreSeverity | "";
+  note?: string;
+}
+
 export interface StaffUser {
   id: number;
   name: string;
   email: string;
-  role: "owner" | "staff";
+  role: "owner" | "shop_owner" | "staff";
   is_active: boolean;
   date_joined: string;
 }
@@ -94,8 +104,21 @@ export interface InvoiceLine {
 
 export interface Invoice {
   id: number;
-  job: number;
+  reference: string;
+  display_reference: string;
+  job: number | null;
   job_reference: string;
+  customer: number | null;
+  bill_to: string;
+  bill_to_name: string;
+  bill_to_email: string;
+  bill_to_phone: string;
+  due_date: string | null;
+  stripe_invoice_id: string;
+  hosted_invoice_url: string;
+  stripe_status: string;
+  stripe_mode: string;
+  is_payable_online: boolean;
   status: InvoiceStatus;
   status_display: string;
   currency: string;
@@ -185,6 +208,8 @@ export interface Job {
   disclaimer_accepted_at: string | null;
   tyre_corrected_on_site: boolean;
   tyre_correction_note: string;
+  damaged_positions: DamagedTyre[];
+  damaged_summary: string;
   location_text: string;
   latitude: string | null;
   longitude: string | null;
@@ -238,6 +263,36 @@ export interface DriverVehicle {
   is_primary: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** One recorded fix from a technician's van. Panel only — section 4.6. */
+/** A customer as the office sees them. The app's own view is narrower. */
+export interface CustomerRecord {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string;
+  photo_url: string;
+  is_phone_verified: boolean;
+  is_email_verified: boolean;
+  is_active: boolean;
+  notes: string;
+  vehicle_count: number;
+  job_count: number;
+  identities: { provider: string; subject: string }[];
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+}
+
+export interface DriverLocationFix {
+  id: number;
+  latitude: string;
+  longitude: string;
+  accuracy_m: number | null;
+  speed_kph: string | null;
+  heading_deg: number | null;
+  recorded_at: string;
 }
 
 export interface DriverDocument {
@@ -298,6 +353,34 @@ export interface DriverMapRow {
   location_updated_at: string | null;
   vehicle_plate: string;
   active_jobs: number;
+}
+
+/** A live call-out as the map and the tracking strip need it — `GET /jobs/map`. */
+export interface JobMapRow {
+  id: number;
+  reference: string;
+  plate: string;
+  status: JobStatus;
+  status_display: string;
+  contact_name: string;
+  contact_phone: string;
+  issue_type: string;
+  issue_label: string;
+  location_text: string;
+  latitude: string | null;
+  longitude: string | null;
+  driver: number | null;
+  driver_name: string;
+  driver_phone: string;
+  driver_latitude: string | null;
+  driver_longitude: string | null;
+  eta_minutes: number | null;
+  eta_seconds: number | null;
+  eta_distance_metres: number | null;
+  eta_updated_at: string | null;
+  created_at: string;
+  assigned_at: string | null;
+  accepted_at: string | null;
 }
 
 export interface Compliance {
@@ -399,3 +482,54 @@ export const NEXT_STATUSES: Record<JobStatus, JobStatus[]> = {
   cancelled: [],
   unclaimed: ["dispatching", "assigned", "cancelled"],
 };
+
+// ------------------------------------------------------------------ audit ----
+
+export type AuditCategory =
+  | "auth"
+  | "sms"
+  | "email"
+  | "push"
+  | "job"
+  | "dispatch"
+  | "billing"
+  | "stripe"
+  | "settings"
+  | "driver"
+  | "staff"
+  | "system";
+
+export type AuditSeverity = "debug" | "info" | "warning" | "error";
+
+export interface AuditEvent {
+  id: number;
+  category: AuditCategory;
+  category_display: string;
+  severity: AuditSeverity;
+  message: string;
+  actor: string;
+  subject_type: string;
+  subject_id: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditSummary {
+  total: number;
+  by_category: { category: AuditCategory; count: number }[];
+  by_severity: { severity: AuditSeverity; count: number }[];
+}
+
+export interface HealthCheck {
+  ok: boolean;
+  detail: string;
+  ms: number;
+}
+
+export interface HealthSnapshot {
+  ok: boolean;
+  debug: boolean;
+  checks: Record<string, HealthCheck>;
+  providers: Record<string, { mode: string; live: boolean }>;
+  mocked: string[];
+}

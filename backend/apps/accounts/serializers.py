@@ -59,6 +59,80 @@ class StaffUserSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "date_joined")
 
 
+class StaffCreateSerializer(serializers.ModelSerializer):
+    """
+    Create a panel account.
+
+    The password is write-only and validated through Django's own validators, so
+    the rules the project already configures apply here rather than a second set
+    invented for the panel.
+    """
+
+    password = serializers.CharField(write_only=True, min_length=8, max_length=128)
+
+    class Meta:
+        model = StaffUser
+        fields = ("id", "name", "email", "role", "is_active", "password")
+        read_only_fields = ("id",)
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if StaffUser.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Somebody already signs in with that address.")
+        return value
+
+    def validate_password(self, value):
+        from django.contrib.auth.password_validation import validate_password
+
+        validate_password(value)
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        return StaffUser.objects.create_user(password=password, **validated_data)
+
+
+class StaffUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StaffUser
+        fields = ("name", "email", "role", "is_active")
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        clash = StaffUser.objects.filter(email__iexact=value)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError("Somebody already signs in with that address.")
+        return value
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """Changing your own password. The current one is required — a borrowed
+    session must not be enough to lock the real owner out of the panel."""
+
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8, max_length=128)
+
+    def validate_new_password(self, value):
+        from django.contrib.auth.password_validation import validate_password
+
+        validate_password(value, user=self.context.get("user"))
+        return value
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    """An administrator setting somebody else's password, without knowing the old one."""
+
+    new_password = serializers.CharField(write_only=True, min_length=8, max_length=128)
+
+    def validate_new_password(self, value):
+        from django.contrib.auth.password_validation import validate_password
+
+        validate_password(value)
+        return value
+
+
 class SocialIdentitySerializer(serializers.ModelSerializer):
     class Meta:
         model = SocialIdentity

@@ -241,3 +241,143 @@ def test_a_void_invoice_cannot_be_marked_paid(staff_client, make_job):
 
     response = staff_client.post(f"/api/v1/invoices/{job.invoice.pk}/mark-paid", {}, format="json")
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------- Stripe / payment --
+
+
+def _invoice_for(staff_client, make_job):
+    from apps.billing.models import Invoice
+
+    job = make_job()
+    invoice = Invoice.objects.get(job=job)
+    staff_client.post(
+        f"/api/v1/invoices/{invoice.pk}/lines",
+        {"description": "Tyre", "unit_price": "90.00", "quantity": 1},
+        format="json",
+    )
+    invoice.refresh_from_db()
+    return invoice
+
+
+def test_every_invoice_gets_a_quotable_reference(staff_client, make_job):
+    invoice = _invoice_for(staff_client, make_job)
+    assert invoice.reference.startswith("INV-")
+    assert len(invoice.reference) == 10
+
+
+def test_an_invoice_can_be_raised_without_a_job(staff_client):
+    """A fleet account or a counter sale is not a call-out."""
+    response = staff_client.post(
+        "/api/v1/invoices",
+        {"bill_to_name": "Acme Haulage", "bill_to_email": "accounts@acme.test"},
+        format="json",
+    )
+    assert response.status_code == 201, response.data
+    assert response.data["job"] is None
+    assert response.data["bill_to"] == "Acme Haulage"
+
+
+def test_an_invoice_for_nobody_is_refused(staff_client):
+    response = staff_client.post("/api/v1/invoices", {}, format="json")
+    assert response.status_code == 400
+
+
+def test_sending_for_payment_raises_a_stripe_page(staff_client, make_job, settings):
+    settings.STRIPE_MODE = "mock"
+    invoice = _invoice_for(staff_client, make_job)
+
+    response = staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+
+    assert response.status_code == 200, response.data
+    assert response.data["hosted_invoice_url"]
+    assert response.data["stripe_mode"] == "mock"
+    assert response.data["status"] == "issued"
+    # Section 7.2's open decision, recorded: this one went out as a link.
+    assert response.data["payment_method"] == "payment_link"
+
+
+def test_a_payment_link_is_not_raised_twice(staff_client, make_job, settings):
+    """Two working payment pages for one debt is worse than an error."""
+    settings.STRIPE_MODE = "mock"
+    invoice = _invoice_for(staff_client, make_job)
+
+    first = staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+    second = staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+
+    assert first.data["hosted_invoice_url"] == second.data["hosted_invoice_url"]
+
+
+def test_stripe_webhook_marks_the_invoice_paid(api, staff_client, make_job, settings):
+    settings.STRIPE_MODE = "mock"
+    invoice = _invoice_for(staff_client, make_job)
+    staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+    invoice.refresh_from_db()
+
+    response = api.post(
+        "/api/v1/billing/stripe/webhook",
+        {
+            "id": "evt_test_1",
+            "type": "invoice.paid",
+            "data": {"object": {"id": invoice.stripe_invoice_id, "payment_intent": "pi_test_1"}},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    invoice.refresh_from_db()
+    assert invoice.status == "paid"
+    assert invoice.payment_reference == "pi_test_1"
+
+
+def test_the_same_webhook_twice_is_applied_once(api, staff_client, make_job, settings):
+    """Stripe delivers at least once and retries — every handler must be idempotent."""
+    settings.STRIPE_MODE = "mock"
+    invoice = _invoice_for(staff_client, make_job)
+    staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+    invoice.refresh_from_db()
+
+    payload = {
+        "id": "evt_test_2",
+        "type": "invoice.paid",
+        "data": {"object": {"id": invoice.stripe_invoice_id, "payment_intent": "pi_test_2"}},
+    }
+    api.post("/api/v1/billing/stripe/webhook", payload, format="json")
+    invoice.refresh_from_db()
+    first_paid_at = invoice.paid_at
+
+    second = api.post("/api/v1/billing/stripe/webhook", payload, format="json")
+
+    assert second.data["duplicate"] is True
+    invoice.refresh_from_db()
+    assert invoice.paid_at == first_paid_at
+
+
+def test_an_unknown_event_is_acknowledged_not_rejected(api, settings):
+    """A non-2xx makes Stripe retry forever something we never wanted."""
+    settings.STRIPE_MODE = "mock"
+    response = api.post(
+        "/api/v1/billing/stripe/webhook",
+        {"id": "evt_test_3", "type": "customer.created", "data": {"object": {}}},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.data["handled"] is False
+
+
+def test_live_mode_refuses_a_test_key(settings):
+    """A test key in live mode means nothing would ever actually be collected."""
+    from apps.billing.stripe_gateway import StripeError, get_gateway
+
+    settings.STRIPE_MODE = "live"
+    settings.STRIPE_SECRET_KEY = "sk_test_pretend"
+    with pytest.raises(StripeError, match="live but the key is a test key"):
+        get_gateway()
+
+
+def test_an_issued_invoice_cannot_be_deleted(staff_client, make_job, settings):
+    settings.STRIPE_MODE = "mock"
+    invoice = _invoice_for(staff_client, make_job)
+    staff_client.post(f"/api/v1/invoices/{invoice.pk}/send-payment-link")
+
+    assert staff_client.delete(f"/api/v1/invoices/{invoice.pk}").status_code == 400

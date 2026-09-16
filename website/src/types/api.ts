@@ -84,6 +84,30 @@ export interface Invoice {
   lines: InvoiceLine[];
 }
 
+/** A car the customer has saved (specification 4.2). */
+export interface SavedVehicle {
+  id: number;
+  vehicle: Vehicle | null;
+  nickname: string;
+  is_primary: boolean;
+  confirmation_path: ConfirmationPath | "";
+  looked_up_tyre_size: string;
+  customer_tyre_size: string;
+  effective_tyre_size: string;
+  confirmed_at: string | null;
+  created_at: string;
+}
+
+export type TyrePosition = "front_left" | "front_right" | "rear_left" | "rear_right" | "spare";
+export type TyreSeverity = "flat" | "deflating" | "damaged" | "blowout";
+
+/** One damaged wheel, exactly as `Job.damaged_positions` carries it. */
+export interface DamagedTyre {
+  position: TyrePosition;
+  severity?: TyreSeverity | "";
+  note?: string;
+}
+
 export interface CustomerJob {
   id: number;
   reference: string;
@@ -92,6 +116,8 @@ export interface CustomerJob {
   issue_type: string;
   issue_label: string;
   description: string;
+  damaged_positions: DamagedTyre[];
+  damaged_summary: string;
   tyre_size: string;
   looked_up_tyre_size: string;
   customer_tyre_size: string;

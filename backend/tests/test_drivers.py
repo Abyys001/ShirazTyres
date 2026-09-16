@@ -7,7 +7,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
-from apps.drivers.models import Driver, DriverDocument, DriverLocation
+from apps.drivers.models import Driver, DriverDocument, DriverLocation, DriverVehicle
 
 pytestmark = pytest.mark.django_db
 
@@ -95,6 +95,47 @@ def test_only_one_van_is_primary(pending_driver_client):
 
     vans = pending_driver_client.get("/api/v1/driver/vehicles").data["results"]
     assert sorted(van["is_primary"] for van in vans) == [False, True]
+
+
+def test_the_van_carries_its_own_mot_and_tax_dates(pending_driver_client):
+    """The technician's screen leads with these, so they live on the record."""
+    response = pending_driver_client.post(
+        "/api/v1/driver/vehicles", {"plate": "AB12CDE"}, format="json"
+    )
+    assert response.status_code == 201, response.data
+    assert response.data["mot_status"] == "Valid"
+    assert response.data["mot_expiry_date"] == "2026-06-14"
+    assert response.data["tax_status"] == "Taxed"
+    assert response.data["mot_days_remaining"] is not None
+    assert response.data["dvla_fetched_at"]
+
+
+def test_the_van_can_be_rechecked_against_dvla(pending_driver_client):
+    van = pending_driver_client.post(
+        "/api/v1/driver/vehicles", {"plate": "AB12CDE"}, format="json"
+    ).data
+    DriverVehicle.objects.filter(pk=van["id"]).update(mot_status="", mot_expiry_date=None)
+
+    response = pending_driver_client.post(f"/api/v1/driver/vehicles/{van['id']}/refresh")
+    assert response.status_code == 200, response.data
+    assert response.data["mot_status"] == "Valid"
+
+
+def test_a_driver_looks_up_any_plate_and_gets_the_tyre_size(pending_driver_client):
+    """The section 9.3 tool, in the technician's hand."""
+    response = pending_driver_client.get("/api/v1/driver/vehicle-lookup/AB12CDE")
+    assert response.status_code == 200, response.data
+    assert response.data["make"] == "FORD"
+    assert response.data["tyre_size_front"] == "205/55R16"
+    assert response.data["mot_expiry_date"] == "2026-06-14"
+
+
+def test_a_plate_dvla_does_not_know_is_a_404_not_a_crash(pending_driver_client):
+    assert pending_driver_client.get("/api/v1/driver/vehicle-lookup/XX11XXX").status_code == 404
+
+
+def test_the_plate_tool_is_closed_to_anyone_who_is_not_a_driver(api):
+    assert api.get("/api/v1/driver/vehicle-lookup/AB12CDE").status_code in (401, 403)
 
 
 def test_a_driver_uploads_a_document_and_it_starts_pending(pending_driver_client):
@@ -317,3 +358,83 @@ def test_the_live_map_is_staff_only(staff_client, driver_client, driver):
 def test_a_customer_cannot_read_the_driver_directory(customer_client, driver):
     assert customer_client.get("/api/v1/drivers").status_code == 403
     assert customer_client.get(f"/api/v1/drivers/{driver.pk}").status_code == 403
+
+
+# ------------------------------------------------- panel-created drivers ------
+
+
+def test_panel_created_driver_is_approved_when_nothing_is_outstanding(staff_client, settings):
+    """Staff typing in an employee IS section 8.2's administrator decision."""
+    from apps.configuration.services import set_setting
+    from apps.drivers.models import Driver
+
+    set_setting("drivers.required_documents", [])
+
+    response = staff_client.post(
+        "/api/v1/drivers", {"name": "New Hire", "phone": "07700900401"}, format="json"
+    )
+    assert response.status_code == 201, response.data
+
+    driver = Driver.objects.get(phone="+447700900401")
+    assert driver.verification_status == Driver.Verification.APPROVED
+    assert driver.approved_at is not None
+
+
+def test_panel_created_driver_still_waits_on_required_documents(staff_client):
+    """Section 8.2/8.3 is a compliance gate, not a formality — it is not bypassed."""
+    from apps.configuration.services import set_setting
+    from apps.drivers.models import Driver
+
+    set_setting("drivers.required_documents", ["insurance"])
+
+    response = staff_client.post(
+        "/api/v1/drivers", {"name": "Undocumented", "phone": "07700900402"}, format="json"
+    )
+    assert response.status_code == 201, response.data
+
+    driver = Driver.objects.get(phone="+447700900402")
+    assert driver.verification_status == Driver.Verification.PENDING
+    assert "insurance" in driver.missing_documents()
+
+
+def test_panel_created_driver_can_sign_in_immediately(staff_client, api):
+    """Whatever their verification state, the account exists and OTP resolves to it."""
+    staff_client.post(
+        "/api/v1/drivers", {"name": "Signs In", "phone": "07700900403"}, format="json"
+    )
+    issued = api.post(
+        "/api/v1/auth/otp/request", {"phone": "07700900403", "purpose": "driver"}, format="json"
+    )
+    verified = api.post(
+        "/api/v1/auth/driver/otp/verify",
+        {"phone": "07700900403", "code": issued.data["debug_code"]},
+        format="json",
+    )
+    assert verified.status_code == 200, verified.data
+    assert verified.data["driver"]["name"] == "Signs In"
+
+
+# ----------------------------------------------------- development sign-in ----
+
+
+def test_dev_accounts_lists_drivers_from_the_database(staff_client, api, driver, settings):
+    """A driver created in the panel appears on the app's sign-in screen."""
+    settings.DEBUG = True
+    staff_client.post(
+        "/api/v1/drivers", {"name": "Fresh Driver", "phone": "07700900404"}, format="json"
+    )
+
+    response = api.get("/api/v1/auth/dev/accounts")
+
+    assert response.status_code == 200
+    phones = [row["phone"] for row in response.data["drivers"]]
+    assert "+447700900404" in phones
+    # Names and numbers only — never a code or a token.
+    assert set(response.data["drivers"][0]) == {
+        "phone", "name", "state", "is_approved", "is_online",
+    }
+
+
+def test_dev_accounts_is_gone_outside_debug(api, settings):
+    settings.DEBUG = False
+    assert api.get("/api/v1/auth/dev/accounts").status_code == 404

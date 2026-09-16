@@ -1,7 +1,9 @@
 from django.db.models import Count, Q
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
@@ -9,11 +11,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import OtpCode
+from apps.audit.models import AuditEvent
+from apps.audit.services import record
 from apps.accounts.permissions import IsDriver, IsStaff
 from apps.accounts.services import verify_otp
 from apps.accounts.tokens import SCOPE_DRIVER, issue_pair
+from apps.vehicles.plate import normalise_plate
 from apps.vehicles.providers import VehicleLookupError
-from apps.vehicles.services import fetch_dvla_only
+from apps.vehicles.serializers import VehicleSerializer
+from apps.vehicles.services import fetch_dvla_only, lookup_plate
 
 from .models import Driver, DriverDocument, DriverLocation, DriverVehicle
 from .serializers import (
@@ -145,6 +151,20 @@ class DriverVehicleViewSet(viewsets.ModelViewSet):
             ).update(is_primary=False)
         serializer.save(**data)
 
+    @extend_schema(request=None, responses={200: DriverVehicleSerializer})
+    @action(detail=True, methods=["post"])
+    def refresh(self, request, pk=None):
+        """Re-ask DVLA. Tax and MOT move without anybody touching the record."""
+        vehicle = self.get_object()
+        try:
+            result = fetch_dvla_only(vehicle.plate)
+        except VehicleLookupError as exc:
+            raise ValidationError({"plate": [str(exc)]}) from exc
+        for field, value in self._from_dvla(result).items():
+            setattr(vehicle, field, value)
+        vehicle.save()
+        return Response(DriverVehicleSerializer(vehicle).data)
+
     def _autofill(self, validated: dict) -> dict:
         """A DVLA miss must not stop a driver registering their van by hand."""
         plate = validated.get("plate")
@@ -154,12 +174,51 @@ class DriverVehicleViewSet(viewsets.ModelViewSet):
             result = fetch_dvla_only(plate)
         except VehicleLookupError:
             return {}
+        data = self._from_dvla(result)
+        # Anything the driver typed themselves wins over the record.
+        for field in ("make", "model", "colour", "year_of_manufacture"):
+            data[field] = validated.get(field) or data[field]
+        return data
+
+    @staticmethod
+    def _from_dvla(result) -> dict:
         return {
-            "make": validated.get("make") or result.make,
-            "model": validated.get("model") or result.model,
-            "colour": validated.get("colour") or result.colour,
-            "year_of_manufacture": validated.get("year_of_manufacture") or result.year_of_manufacture,
+            "make": result.make,
+            "model": result.model,
+            "colour": result.colour,
+            "year_of_manufacture": result.year_of_manufacture,
+            "fuel_type": result.fuel_type,
+            "engine_capacity": result.engine_capacity,
+            "co2_emissions": result.co2_emissions,
+            "tax_status": result.tax_status,
+            "tax_due_date": result.tax_due_date,
+            "mot_status": result.mot_status,
+            "mot_expiry_date": result.mot_expiry_date,
+            "dvla_fetched_at": timezone.now(),
         }
+
+
+@extend_schema(tags=["driver-app"], responses={200: VehicleSerializer})
+class DriverVehicleLookupView(APIView):
+    """The section 9.3 plate tool, in the technician's hand.
+
+    Same cached lookup the panel uses — a fitter standing at a bonnet needs the
+    tyre size and what the car actually is, and the customer app's public
+    endpoint is throttled for anonymous callers rather than for someone doing
+    this twenty times a shift.
+    """
+
+    permission_classes = [IsDriver]
+    throttle_scope = "driver_lookup"
+
+    def get(self, request, plate):
+        try:
+            vehicle = lookup_plate(normalise_plate(plate))
+        except VehicleLookupError as exc:
+            if exc.not_found:
+                raise NotFound(str(exc)) from exc
+            raise ValidationError({"plate": [str(exc)]}) from exc
+        return Response(VehicleSerializer(vehicle).data)
 
 
 @extend_schema(tags=["driver-app"])
@@ -191,6 +250,51 @@ class DriverViewSet(viewsets.ModelViewSet):
     filterset_fields = ["verification_status", "is_active", "is_online", "service_areas"]
     search_fields = ["name", "phone", "email", "employment_reference", "vehicles__plate"]
     ordering_fields = ["created_at", "name", "verification_status", "last_login_at"]
+
+    def perform_create(self, serializer):
+        """
+        A driver the office types in is an employee being taken on, not a
+        stranger registering — so the act of creating them here *is* section
+        8.2's administrator decision, and they are approved on the spot.
+
+        Except when they cannot be. Section 8.2 only lets an approved driver into
+        the dispatch pool, and 8.3 suspends one whose insurance lapses; a record
+        with no documents on it fails ``set_verification`` for exactly that
+        reason and must keep failing. The driver is created and can sign in
+        immediately either way — they simply land on onboarding until whoever
+        created them uploads the paperwork. The response says which happened so
+        the panel can tell them.
+        """
+        driver = serializer.save()
+        actor = self.request.user.name or self.request.user.email
+
+        try:
+            set_verification(
+                driver,
+                Driver.Verification.APPROVED,
+                by=self.request.user,
+                note=f"Created and approved in the panel by {actor}.",
+            )
+            message = f"Driver {driver.name} created and approved"
+            severity = AuditEvent.Severity.INFO
+        except ValidationError:
+            message = (
+                f"Driver {driver.name} created — awaiting documents: "
+                + ", ".join(driver.missing_documents())
+            )
+            severity = AuditEvent.Severity.WARNING
+
+        record(
+            "driver",
+            message,
+            severity=severity,
+            actor=actor,
+            subject_type="driver",
+            subject_id=driver.pk,
+            phone=driver.phone,
+            verification_status=driver.verification_status,
+            missing_documents=driver.missing_documents(),
+        )
 
     @extend_schema(request=VerificationUpdateSerializer, responses={200: DriverSerializer})
     @action(detail=True, methods=["post"])

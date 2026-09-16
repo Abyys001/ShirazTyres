@@ -1,20 +1,34 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useCallback } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 import { Button, Card, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/format";
+import { useCustomerFeed } from "@/lib/ws";
 import type { CustomerJob, Paginated } from "@/types/api";
 import { STATUS_LABELS } from "@/types/api";
 
 export default function JobsPage() {
+  const queryClient = useQueryClient();
+
+  // The list shows the same statuses the detail page does, so it has to move on
+  // the same events. Left on the poll alone, a call-out a technician accepted
+  // seconds ago sat here as "Finding a driver" for up to half a minute.
+  const connected = useCustomerFeed(
+    useCallback(
+      () => void queryClient.invalidateQueries({ queryKey: ["my-jobs"] }),
+      [queryClient],
+    ),
+  );
+
   const jobs = useQuery({
     queryKey: ["my-jobs"],
     queryFn: () => api<Paginated<CustomerJob>>("/my/jobs"),
-    refetchInterval: 30_000,
+    refetchInterval: connected ? 60_000 : 15_000,
   });
 
   return (

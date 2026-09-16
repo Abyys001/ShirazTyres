@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'ui_kit.dart';
+
+/// An empty or failed state, centred in whatever space it is given.
 class MessageView extends StatelessWidget {
   const MessageView({
     required this.title,
     this.message = '',
     this.icon = Icons.info_outline,
     this.onRetry,
+    this.action,
     super.key,
   });
 
@@ -14,35 +18,25 @@ class MessageView extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onRetry;
 
+  /// Takes precedence over [onRetry] when the state has something better to
+  /// offer than trying again.
+  final Widget? action;
+
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 44, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            if (message.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 6),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-            if (onRetry != null) ...<Widget>[
-              const SizedBox(height: 16),
-              OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-            ],
-          ],
-        ),
+      child: AppEmptyState(
+        title: title,
+        message: message,
+        icon: icon,
+        action: action ??
+            (onRetry == null
+                ? null
+                : OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Try again'),
+                  )),
       ),
     );
   }

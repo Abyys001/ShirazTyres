@@ -18,10 +18,10 @@ class AuthApi {
     return OtpChallenge.fromJson(asMap(data));
   }
 
-  Future<DriverSession> verify({required String phone, required String code, String name = ''}) async {
+  Future<DriverSession> verify({required String phone, required String code}) async {
     final data = await _client.post(
       '/auth/driver/otp/verify',
-      body: <String, String>{'phone': phone, 'code': code, if (name.isNotEmpty) 'name': name},
+      body: <String, String>{'phone': phone, 'code': code},
     );
     final map = asMap(data);
     return DriverSession(

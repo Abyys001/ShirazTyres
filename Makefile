@@ -1,9 +1,13 @@
-.PHONY: up down logs migrate makemigrations seed test lint schema types shell psql websocket-check emulator
+.PHONY: up down logs migrate makemigrations seed test test-demo lint schema types shell psql websocket-check emulator waydroid
 
 # Boot the Pixel_Tyres emulator and run BOTH Flutter apps in debug mode
 # (hot reload enabled) inside tmux. Press r / R / q in each pane.
 emulator:
 	scripts/run_emulator.sh
+
+# Same, but against a running Waydroid container (see scripts/run_waydroid.sh).
+waydroid:
+	scripts/run_waydroid.sh
 
 up:
 	docker compose up -d --build
@@ -29,6 +33,13 @@ test:
 # The suite runs without Postgres or Redis; useful before the stack is even up.
 test-local:
 	cd backend && USE_SQLITE=1 ./.venv/bin/pytest
+
+# The whole call-out across all three surfaces, against the running stack: a
+# customer raises a job, the panel and the technician see it live, the job is
+# taken, driven to completion and invoiced. Run this before a demo.
+# Needs `make seed`, and the technician on 07700900301 not already on a job.
+test-demo:
+	node scripts/demo_check.mjs
 
 lint:
 	docker compose exec backend ruff check .

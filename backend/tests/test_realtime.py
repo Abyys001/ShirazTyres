@@ -142,3 +142,91 @@ def test_a_token_for_the_wrong_audience_is_refused_at_the_socket(customer, drive
 
     with pytest.raises(TOKEN_ERRORS):
         read_scoped_token("not-a-token", SCOPE_CUSTOMER)
+
+
+def test_a_rejection_reaches_the_panel_even_when_it_does_not_escalate(
+    listen, make_job, driver, second_driver, driver_client
+):
+    """Section 6.3. In selection mode with offers still open a rejection changes
+    nothing else the office can see, so without its own event the dispatch card
+    goes on showing a name that has already said no."""
+    from apps.configuration.services import set_setting
+    from apps.dispatch.engine import dispatch_job
+
+    set_setting("dispatch.mode", "selection")
+    job = make_job()
+    dispatch_job(job)
+
+    drain = listen(groups.PANEL)
+    driver_client.post(f"/api/v1/driver/jobs/{job.pk}/reject", {"reason": "Too far."}, format="json")
+
+    events = [message["event"] for message in drain(groups.PANEL)]
+    assert "dispatch.rejected" in events
+
+
+def test_assigning_by_hand_withdraws_the_offer_on_every_other_phone(
+    listen, make_job, driver, second_driver, staff_client
+):
+    """The office taking a job off the board has to reach the drivers who were
+    still holding an offer for it, or one of them taps accept on a job that is gone."""
+    from apps.configuration.services import set_setting
+    from apps.dispatch.engine import dispatch_job
+
+    set_setting("dispatch.mode", "selection")
+    job = make_job()
+    dispatch_job(job)
+
+    drain = listen(groups.driver_group(second_driver.pk))
+    response = staff_client.post(
+        f"/api/v1/jobs/{job.pk}/assign", {"driver_id": driver.pk}, format="json"
+    )
+    assert response.status_code == 200, response.data
+
+    withdrawals = [
+        message for message in drain(groups.driver_group(second_driver.pk))
+        if message["event"] == "offer.withdrawn"
+    ]
+    assert withdrawals, "the losing driver was never told"
+    assert "office" in withdrawals[0]["reason"].lower()
+
+
+def test_a_refund_moves_the_panel_without_a_reload(listen, in_progress_job, driver_client, staff_client):
+    """Every other invoice mutation announces itself; a refund used to be written
+    straight onto the row in the view and nobody was told."""
+    driver_client.post(f"/api/v1/driver/jobs/{in_progress_job.pk}/complete", {}, format="json")
+    in_progress_job.refresh_from_db()
+    invoice_id = in_progress_job.invoice.pk
+
+    drain = listen(groups.PANEL)
+    response = staff_client.post(
+        f"/api/v1/invoices/{invoice_id}/refund", {"reason": "Wrong tyre fitted."}, format="json"
+    )
+    assert response.status_code == 200, response.data
+
+    events = [message["event"] for message in drain(groups.PANEL)]
+    assert "invoice.refunded" in events
+
+
+def test_changing_a_setting_tells_every_other_panel(listen, staff_client):
+    """Two people on the settings screen used to overwrite each other in silence."""
+    drain = listen(groups.PANEL)
+    response = staff_client.patch(
+        "/api/v1/settings", {"values": {"dispatch.mode": "selection"}}, format="json"
+    )
+    assert response.status_code == 200, response.data
+
+    events = [message["event"] for message in drain(groups.PANEL)]
+    assert "config.settings" in events
+
+
+def test_editing_the_price_list_tells_every_other_panel(listen, staff_client):
+    drain = listen(groups.PANEL)
+    response = staff_client.post(
+        "/api/v1/service-items",
+        {"code": "TYRE-205", "name": "205/55R16 fitted", "kind": "part", "unit_price": "95.00"},
+        format="json",
+    )
+    assert response.status_code == 201, response.data
+
+    events = [message["event"] for message in drain(groups.PANEL)]
+    assert "config.service-items" in events

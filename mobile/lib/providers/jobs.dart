@@ -7,6 +7,7 @@ import '../models/invoice.dart';
 import '../models/job.dart';
 import '../models/offer.dart';
 import 'api.dart';
+import 'auth.dart';
 
 /// Live offers (specification 6). Rebuilt whenever the socket says something
 /// changed, and polled slowly as a backstop for a dropped connection.
@@ -14,28 +15,48 @@ final offersProvider = AsyncNotifierProvider<OffersController, List<Offer>>(Offe
 
 class OffersController extends AsyncNotifier<List<Offer>> {
   Timer? _poll;
+  bool _gone = false;
 
   @override
   Future<List<Offer>> build() async {
+    _gone = false;
     final socket = ref.watch(driverSocketProvider);
     final subscription = socket.events.listen((event) {
       final name = '${event['event']}';
       if (name.startsWith('offer.') || name.startsWith('job.')) {
-        refresh();
+        unawaited(refresh());
       }
     });
 
-    _poll = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+    // The socket carries every offer; this is the backstop for a dropped
+    // connection, and it leans on the poll harder while the socket is down.
+    final connection = socket.connection.listen((up) {
+      _poll?.cancel();
+      _poll = Timer.periodic(
+        up ? const Duration(seconds: 30) : const Duration(seconds: 10),
+        (_) => unawaited(refresh()),
+      );
+      if (up) unawaited(refresh());
+    });
+
+    _poll = Timer.periodic(const Duration(seconds: 30), (_) => unawaited(refresh()));
     ref.onDispose(() {
+      _gone = true;
       subscription.cancel();
+      connection.cancel();
       _poll?.cancel();
     });
 
     return ref.read(jobApiProvider).offers();
   }
 
+  /// A refresh may correct the list; it must never replace a good one with an
+  /// error because one poll could not reach the API mid-shift.
   Future<void> refresh() async {
-    state = await AsyncValue.guard(() => ref.read(jobApiProvider).offers());
+    final result = await AsyncValue.guard(() => ref.read(jobApiProvider).offers());
+    if (_gone) return;
+    if (result.hasError && state.hasValue) return;
+    state = result;
   }
 
   Future<void> accept(int jobId) async {
@@ -52,7 +73,14 @@ class OffersController extends AsyncNotifier<List<Offer>> {
 }
 
 final driverSocketProvider = Provider<OfferSocket>((ref) {
-  final socket = OfferSocket(() => ref.read(tokenStoreProvider).readAccess());
+  final socket = OfferSocket(
+    () => ref.read(tokenStoreProvider).readAccess(),
+    // The handshake carries the access token in the query string, so an expired
+    // one is refused and no amount of retrying fixes it. One authenticated REST
+    // call renews it through the client's interceptor; the next attempt then
+    // carries a live token.
+    onRefused: () => ref.read(driverApiProvider).meRaw(),
+  );
   unawaited(socket.connect());
   ref.onDispose(socket.dispose);
   return socket;
@@ -141,3 +169,24 @@ class JobActions {
 }
 
 final jobActionsProvider = Provider<JobActions>(JobActions.new);
+
+/// The app-wide bridge from the live channel to everything that reads a job.
+///
+/// [OffersController] listens for its own list, but the job in hand, the history
+/// and the driver's own record are all separate providers that were only ever
+/// refetched by a pull-to-refresh. One listener here bumps the revision every
+/// watcher already keys off, so a status the office changed shows up on the
+/// technician's phone without anybody touching the screen.
+final driverLiveSyncProvider = Provider<void>((ref) {
+  final subscription = ref.watch(driverSocketProvider).events.listen((event) {
+    final name = '${event['event']}';
+    if (name.startsWith('job.') || name.startsWith('offer.')) {
+      ref.read(jobRevisionProvider.notifier).state++;
+    }
+    if (name.startsWith('driver.')) {
+      // Approval, suspension, and the shift toggle the office can flip remotely.
+      unawaited(ref.read(authControllerProvider.notifier).refreshDriver());
+    }
+  });
+  ref.onDispose(subscription.cancel);
+});

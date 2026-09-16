@@ -99,13 +99,30 @@ def transition_job(
     assigned_staff: StaffUser | None = None,
     set_driver: Driver | None = None,
     clear_driver: bool = False,
+    force: bool = False,
 ) -> Job:
+    """
+    Move a job to ``new_status``, recording who did it and why.
+
+    ``force`` is the office's override of the section 5 lifecycle, and exists
+    because reality does not always take the transitions the graph allows — a
+    driver's phone dies mid-job, a call-out is finished on paper, a job is
+    resurrected after being cancelled in error. Refusing those left staff
+    editing rows in the database, which is worse than allowing it and writing
+    down what happened.
+
+    It bypasses the transition check and nothing else: the event, the actor, the
+    timestamps, the notification and the realtime publish are all identical, so
+    a forced move is as auditable as any other. Callers must supply a note; the
+    serializer enforces that, and an override with no reason on the record is
+    the thing this is meant to prevent.
+    """
     from apps.notifications.tasks import notify_job_status_change
     from apps.realtime.publish import publish_job_event
 
     if new_status == job.status:
         raise ValidationError({"status": [f"This job is already {job.get_status_display().lower()}."]})
-    if not job.can_transition_to(new_status):
+    if not force and not job.can_transition_to(new_status):
         raise ValidationError(
             {"status": [
                 f"Cannot move a {job.get_status_display().lower()} job to "
@@ -147,7 +164,9 @@ def transition_job(
             job=job,
             from_status=previous,
             to_status=new_status,
-            note=note,
+            # Marked on the event itself, so a move the lifecycle would not have
+            # allowed is identifiable in the timeline long after the fact.
+            note=f"Override: {note}"[:255] if force else note,
             actor_type=actor_type,
             changed_by_staff=staff,
             changed_by_driver=driver,
@@ -156,6 +175,31 @@ def transition_job(
         transaction.on_commit(lambda: publish_job_event(job, "status"))
 
     logger.info("job.transition reference=%s %s->%s", job.reference, previous, new_status)
+
+    # JobStatusEvent stays the authority on a job's own history. This puts the
+    # same move on the one timeline that also carries the OTP, the email and the
+    # Stripe callback, which is where somebody goes when the question spans more
+    # than one job.
+    from apps.audit.models import AuditEvent
+    from apps.audit.services import record
+
+    record(
+        "job",
+        f"{job.reference}: {previous} to {new_status}" + (" (override)" if force else ""),
+        severity=AuditEvent.Severity.WARNING if force else AuditEvent.Severity.INFO,
+        actor=(
+            getattr(staff, "name", "")
+            or getattr(driver, "name", "")
+            or actor_type
+        ),
+        subject_type="job",
+        subject_id=job.pk,
+        reference=job.reference,
+        from_status=previous,
+        to_status=new_status,
+        note=note,
+        forced=force,
+    )
     return job
 
 
@@ -173,6 +217,7 @@ def set_eta(job: Job, seconds: int | None, distance_metres: int | None = None) -
 
 def correct_tyre_on_site(job: Job, size: str, *, driver: Driver, note: str = "") -> Job:
     """Section 9.3 — the driver overrides the specification when the car does not match."""
+    from apps.realtime.publish import publish_job_event
     from apps.vehicles.models import Vehicle
     from apps.vehicles.services import confirm_tyre_size
 
@@ -193,6 +238,7 @@ def correct_tyre_on_site(job: Job, size: str, *, driver: Driver, note: str = "")
         changed_by_driver=driver,
     )
     logger.info("job.tyre_corrected reference=%s size=%s", job.reference, size)
+    publish_job_event(job, "tyre")
     return job
 
 

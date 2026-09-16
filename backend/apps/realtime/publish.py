@@ -73,9 +73,12 @@ def publish_offer(offer) -> None:
             "job": DriverJobSerializer(offer.attempt.job).data,
         },
     )
+    publish_dispatch_event(offer.attempt.job, "offered")
 
 
-def publish_offer_withdrawn(offer_id: int) -> None:
+def publish_offer_withdrawn(offer_id: int, reason: str = "Another driver took this job.") -> None:
+    """The reason is shown to the technician, so it has to be the true one: a job the
+    office assigned by hand did not go to a faster driver."""
     from apps.dispatch.models import DispatchOffer
 
     offer = DispatchOffer.objects.select_related("attempt__job").filter(pk=offer_id).first()
@@ -87,6 +90,74 @@ def publish_offer_withdrawn(offer_id: int) -> None:
             "event": "offer.withdrawn",
             "offer_id": offer.pk,
             "job_id": offer.attempt.job_id,
-            "reason": "Another driver took this job.",
+            "reason": reason,
         },
     )
+    publish_dispatch_event(offer.attempt.job, "withdrawn")
+
+
+def publish_driver_event(driver, kind: str) -> None:
+    """Panel and the driver's own app.
+
+    The panel keeps a roster and a map that both have to move without a reload, so
+    every change to a driver's shift or standing is announced rather than polled for.
+    The driver's own copy goes to their private group: it is the same record the
+    office sees, and it is already theirs.
+    """
+    from apps.drivers.serializers import DriverSerializer, DriverSelfSerializer
+
+    _send(
+        groups.PANEL,
+        {"event": f"driver.{kind}", "driver": DriverSerializer(driver).data},
+    )
+    _send(
+        groups.driver_group(driver.pk),
+        {"event": f"driver.{kind}", "driver": DriverSelfSerializer(driver).data},
+    )
+
+
+def publish_invoice_event(invoice, kind: str) -> None:
+    """Panel only. Money is an office concern; the customer sees a total on the job."""
+    from apps.billing.serializers import InvoiceSerializer
+
+    _send(
+        groups.PANEL,
+        {"event": f"invoice.{kind}", "invoice": InvoiceSerializer(invoice).data},
+    )
+
+
+def publish_dispatch_event(job, kind: str) -> None:
+    """Where a job is in the dispatch round, for the panel's dispatch card.
+
+    Section 6: the worst failure this system has is a job sitting with nobody
+    waiting on it, so the office watches the rounds happen rather than finding out
+    on the next poll.
+    """
+    from apps.dispatch.models import DispatchAttempt
+    from apps.dispatch.serializers import DispatchAttemptSerializer
+
+    attempt = (
+        DispatchAttempt.objects.filter(job=job)
+        .prefetch_related("offers__driver")
+        .order_by("-round_number")
+        .first()
+    )
+    _send(
+        groups.PANEL,
+        {
+            "event": f"dispatch.{kind}",
+            "job_id": job.pk,
+            "attempt": DispatchAttemptSerializer(attempt).data if attempt else None,
+        },
+    )
+
+
+def publish_config_event(kind: str) -> None:
+    """A change to the catalogue the office works from — the settings, the price
+    list, the service areas, the staff accounts.
+
+    Only the kind travels. These change rarely and feed several panel queries at
+    once, so the useful message is "go and look again", not a payload each screen
+    would have to merge into its own shape.
+    """
+    _send(groups.PANEL, {"event": f"config.{kind}"})

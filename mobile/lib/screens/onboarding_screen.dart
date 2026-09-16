@@ -6,9 +6,11 @@ import 'package:image_picker/image_picker.dart';
 
 import '../core/api_exception.dart';
 import '../core/formatters.dart';
+import '../core/theme.dart';
 import '../models/driver.dart';
 import '../providers/api.dart';
 import '../providers/auth.dart';
+import '../widgets/ui_kit.dart';
 
 const _documentTypes = <String, String>{
   'insurance': 'Insurance certificate',
@@ -18,6 +20,10 @@ const _documentTypes = <String, String>{
 
 /// Registration (specification 8.1): profile and photograph, the van, and the
 /// documents an administrator has to see before any job is sent out.
+///
+/// The three steps are shown as a progress bar, because a driver who cannot see
+/// what is left assumes they are finished and waits on an approval that is never
+/// coming.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -50,16 +56,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       await ref.read(authControllerProvider.notifier).refreshDriver();
     } on ApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(error.message)));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _saveProfile() async {
-    await _run(() => ref.read(authControllerProvider.notifier).updateProfile(name: _name.text.trim()));
-  }
+  Future<void> _saveProfile() =>
+      _run(() => ref.read(authControllerProvider.notifier).updateProfile(name: _name.text.trim()));
 
   Future<void> _pickPhoto() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1200);
@@ -102,111 +109,200 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final driver = ref.watch(currentDriverProvider);
     if (driver == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final theme = Theme.of(context);
+    final done = <bool>[
+      driver.name.isNotEmpty,
+      driver.vehicles.isNotEmpty,
+      driver.missingDocuments.isEmpty,
+    ];
+    final completed = done.where((step) => step).length;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Set up your account')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, Space.xxxl),
         children: <Widget>[
-          Text('1. Your details', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(labelText: 'Full name'),
-            textCapitalization: TextCapitalization.words,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _busy ? null : _saveProfile,
-                  child: const Text('Save name'),
+          _Progress(completed: completed, total: done.length),
+          const SizedBox(height: Space.xl),
+
+          const SectionHeader('Your details', step: 1),
+          SurfaceCard(
+            accent: done[0] ? palette.success : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: palette.surfaceRaised,
+                      backgroundImage: driver.photo.isEmpty ? null : NetworkImage(driver.photo),
+                      child: driver.photo.isEmpty
+                          ? Icon(Icons.person_outline, color: palette.inkSubtle)
+                          : null,
+                    ),
+                    const SizedBox(width: Space.lg),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _pickPhoto,
+                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                        label: Text(driver.photo.isEmpty ? 'Take photo' : 'Retake photo'),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _busy ? null : _pickPhoto,
-                  child: Text(driver.photo.isEmpty ? 'Take photo' : 'Retake photo'),
+                const SizedBox(height: Space.lg),
+                TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(labelText: 'Full name'),
+                  textCapitalization: TextCapitalization.words,
                 ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'Your first name and photograph are shown to the customer so they know who is coming. '
-              'Nothing else about you is.',
-              style: Theme.of(context).textTheme.bodySmall,
+                const SizedBox(height: Space.md),
+                BusyButton(
+                  label: 'Save name',
+                  outlined: true,
+                  busy: _busy,
+                  onPressed: _saveProfile,
+                ),
+                const SizedBox(height: Space.md),
+                Text(
+                  'The customer sees your first name and photo. Nothing else.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 24),
-          Text('2. Your van', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (driver.vehicles.isEmpty) ...<Widget>[
-            TextField(
-              controller: _plate,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Registration', hintText: 'AB12 CDE'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _busy ? null : _addVan,
-              child: const Text('Add van'),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'Make, model and colour fill in from the registration.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ] else
-            for (final van in driver.vehicles)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(formatPlate(van.plate)),
-                subtitle: Text(van.description),
-                trailing: van.isPrimary ? const Text('primary') : null,
-              ),
+          const SizedBox(height: Space.xl),
+          const SectionHeader('Your van', step: 2),
+          SurfaceCard(
+            accent: done[1] ? palette.success : null,
+            child: driver.vehicles.isEmpty
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      TextField(
+                        controller: _plate,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'Registration',
+                          hintText: 'AB12 CDE',
+                        ),
+                      ),
+                      const SizedBox(height: Space.md),
+                      BusyButton(
+                        label: 'Add van',
+                        outlined: true,
+                        busy: _busy,
+                        onPressed: _addVan,
+                      ),
+                      const SizedBox(height: Space.md),
+                      Text(
+                        'Make, model and colour fill themselves in.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  )
+                : Column(
+                    children: <Widget>[
+                      for (final van in driver.vehicles)
+                        DetailRow(
+                          van.isPrimary ? 'Primary van' : 'Van',
+                          child: Row(
+                            children: <Widget>[
+                              PlateBadge(formatPlate(van.plate), dense: true),
+                              const SizedBox(width: Space.sm),
+                              Expanded(
+                                child: Text(
+                                  van.description,
+                                  style: theme.textTheme.bodyMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
 
-          const SizedBox(height: 24),
-          Text('3. Your documents', style: Theme.of(context).textTheme.titleMedium),
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: Text(
-              'The office checks these before approving you, and again when they are close to expiring.',
-              style: Theme.of(context).textTheme.bodySmall,
+          const SizedBox(height: Space.xl),
+          const SectionHeader('Your documents', step: 3),
+          SurfaceCard(
+            accent: done[2] ? palette.success : null,
+            padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.sm),
+            child: Column(
+              children: <Widget>[
+                for (final entry in _documentTypes.entries)
+                  _DocumentRow(
+                    label: entry.value,
+                    document: driver.documents
+                        .where((document) => document.documentType == entry.key)
+                        .fold<DriverDocument?>(null, (previous, current) => current),
+                    busy: _busy,
+                    onUpload: () => _uploadDocument(entry.key),
+                  ),
+              ],
             ),
           ),
-          for (final entry in _documentTypes.entries)
-            _DocumentRow(
-              label: entry.value,
-              document: driver.documents
-                  .where((document) => document.documentType == entry.key)
-                  .fold<DriverDocument?>(null, (previous, current) => current),
-              busy: _busy,
-              onUpload: () => _uploadDocument(entry.key),
-            ),
+          const SizedBox(height: Space.sm),
+          Text(
+            'Checked before approval, and again near expiry.',
+            style: theme.textTheme.bodySmall,
+          ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: Space.xl),
           if (driver.missingDocuments.isNotEmpty)
-            Text(
-              'Still outstanding: ${driver.missingDocuments.join(', ')}.',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            )
+            InlineNotice.warning('Still outstanding: ${driver.missingDocuments.join(', ')}.')
           else if (!driver.isApproved)
-            const Text('Everything is in. The office will approve you shortly.')
+            const InlineNotice.info('All in. Approval is with the office.')
           else
-            const Text('You are approved and can go online.'),
+            InlineNotice(
+              'Approved — you can go on shift.',
+              tone: palette.success,
+              icon: Icons.check_circle_outline,
+            ),
         ],
       ),
+    );
+  }
+}
+
+class _Progress extends StatelessWidget {
+  const _Progress({required this.completed, required this.total});
+
+  final int completed;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: Text('$completed OF $total STEPS DONE', style: palette.eyebrow)),
+            if (completed == total)
+              Icon(Icons.check_circle, size: 18, color: palette.success),
+          ],
+        ),
+        const SizedBox(height: Space.sm),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(Radii.pill),
+          child: LinearProgressIndicator(
+            value: total == 0 ? 0 : completed / total,
+            minHeight: 6,
+            color: completed == total ? palette.success : palette.gold,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -226,19 +322,53 @@ class _DocumentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = document == null
-        ? 'not uploaded'
-        : document!.isExpired
-            ? 'expired ${formatDateTime(document!.expiryDate)}'
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final missing = document == null;
+    final expired = document?.isExpired ?? false;
+    final tone = missing
+        ? palette.inkSubtle
+        : expired
+            ? palette.danger
+            : document!.status == 'approved'
+                ? palette.success
+                : palette.warning;
+
+    final status = missing
+        ? 'Not uploaded'
+        : expired
+            ? 'Expired ${formatDateTime(document!.expiryDate)}'
             : '${document!.status} · expires ${formatDateTime(document!.expiryDate)}';
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      subtitle: Text(status),
-      trailing: OutlinedButton(
-        onPressed: busy ? null : onUpload,
-        child: Text(document == null ? 'Upload' : 'Replace'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Space.sm),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: Space.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(label, style: theme.textTheme.titleMedium),
+                Text(status, style: theme.textTheme.bodySmall?.copyWith(color: tone)),
+              ],
+            ),
+          ),
+          const SizedBox(width: Space.sm),
+          OutlinedButton(
+            onPressed: busy ? null : onUpload,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(88, 40),
+              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+            ),
+            child: Text(missing ? 'Upload' : 'Replace'),
+          ),
+        ],
       ),
     );
   }

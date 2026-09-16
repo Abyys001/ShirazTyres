@@ -7,10 +7,11 @@ import { Suspense, useEffect, useRef, useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 import { EMPTY_DECISION, TyreConfirmation, type TyreDecision } from "@/components/tyre-confirmation";
+import { TyreDamagePicker } from "@/components/tyre-damage-picker";
 import { Button, Card, Field, Input, Notice, Select, Steps, Textarea } from "@/components/ui";
 import type { Position } from "@/components/location-picker";
 import { api, fieldError } from "@/lib/client-api";
-import type { Coverage, CustomerJob, PublicConfig, Vehicle } from "@/types/api";
+import type { Coverage, CustomerJob, DamagedTyre, PublicConfig, Vehicle } from "@/types/api";
 
 // Leaflet needs `window`, so the picker only loads in the browser.
 const LocationPicker = dynamic(() => import("@/components/location-picker").then((m) => m.LocationPicker), {
@@ -30,6 +31,7 @@ function Request() {
   const [position, setPosition] = useState<Position | null>(null);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [issueType, setIssueType] = useState("");
+  const [damaged, setDamaged] = useState<DamagedTyre[]>([]);
   const [description, setDescription] = useState("");
   const [locationText, setLocationText] = useState("");
 
@@ -65,6 +67,7 @@ function Request() {
           plate,
           issue_type: issueType,
           description,
+          damaged_positions: damaged,
           location_text: locationText,
           latitude: position?.latitude,
           longitude: position?.longitude,
@@ -200,6 +203,13 @@ function Request() {
                     </option>
                   ))}
                 </Select>
+              </Field>
+
+              <Field
+                label="Which wheel?"
+                error={fieldError(submit.error, "damaged_positions")}
+              >
+                <TyreDamagePicker value={damaged} onChange={setDamaged} />
               </Field>
 
               <Field label="Anything else we should know? (optional)">

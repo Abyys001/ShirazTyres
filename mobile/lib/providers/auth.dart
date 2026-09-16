@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,13 +13,17 @@ import 'push.dart';
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {
-  const AuthState({required this.status, this.driver});
+  const AuthState({required this.status, this.driver, this.error});
 
   const AuthState.unknown() : this(status: AuthStatus.unknown);
   const AuthState.signedOut() : this(status: AuthStatus.signedOut);
 
   final AuthStatus status;
   final Driver? driver;
+
+  /// Why there is no profile, when the session itself is still good. The home
+  /// screen shows this with a retry rather than spinning on a null driver.
+  final String? error;
 
   bool get isSignedIn => status == AuthStatus.signedIn;
   bool get isResolved => status != AuthStatus.unknown;
@@ -31,38 +36,92 @@ class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
     ref.listen<int>(sessionRevokedProvider, (_, __) => _onAuthLost());
-    Future<void>.microtask(restore);
+    unawaited(restore());
     return const AuthState.unknown();
   }
 
   AuthApi get _auth => ref.read(authApiProvider);
 
-  /// Cold start: a stored token is only trusted once the API confirms it.
+  /// Cold start. The work phone is signed in once and stays signed in, so a
+  /// stored refresh token *is* a session until the API refuses it. A technician
+  /// in an underground car park reopens on the cached profile; only an outright
+  /// refusal — or an office revoking the account — sends them back to the phone
+  /// screen.
   Future<void> restore() async {
-    final access = await ref.read(tokenStoreProvider).readAccess();
-    if (access == null || access.isEmpty) {
+    state = const AuthState.unknown();
+    try {
+      await _restore();
+    } catch (error) {
+      // Reading the keystore, or a cached profile written by an older build, can
+      // both throw. Whatever happened, the app must not be left on the splash
+      // screen: the phone screen is always a way back in.
+      state = AuthState(status: AuthStatus.signedOut, error: '$error');
+    }
+  }
+
+  Future<void> _restore() async {
+    final store = ref.read(tokenStoreProvider);
+    final refresh = await store.readRefresh();
+    if (refresh == null || refresh.isEmpty) {
       state = const AuthState.signedOut();
       return;
     }
+
+    Map<String, dynamic>? cached = await store.readProfile();
+    if (cached != null) {
+      try {
+        state = AuthState(status: AuthStatus.signedIn, driver: Driver.fromJson(cached));
+      } catch (_) {
+        // A profile this build cannot read is worth no more than no profile.
+        cached = null;
+      }
+    }
+
     try {
-      state = AuthState(status: AuthStatus.signedIn, driver: await ref.read(driverApiProvider).me());
+      final profile = await ref.read(driverApiProvider).meRaw();
+      await store.saveProfile(profile);
+      state = AuthState(status: AuthStatus.signedIn, driver: Driver.fromJson(profile));
       await _registerDevice();
-    } on ApiException {
-      // Refresh already had its chance inside the client; anything left is dead.
-      await ref.read(tokenStoreProvider).clear();
-      state = const AuthState.signedOut();
+    } on ApiException catch (error) {
+      if (error.isUnauthorised) {
+        // Refresh already had its chance inside the client; this one is dead.
+        await store.clear();
+        state = const AuthState.signedOut();
+      } else if (cached == null) {
+        state = AuthState(status: AuthStatus.signedIn, error: error.message);
+      }
+    } catch (error) {
+      // Anything that is not the API refusing us — a profile this build cannot
+      // parse, a platform channel that threw — used to escape here and leave the
+      // app on the splash screen with no way off it. A cold start now always
+      // ends somewhere the driver can act.
+      if (cached == null) {
+        state = AuthState(
+          status: AuthStatus.signedIn,
+          error: 'Could not load your profile. $error',
+        );
+      }
     }
   }
 
   Future<void> refreshDriver() async {
     if (!state.isSignedIn) return;
-    state = AuthState(status: AuthStatus.signedIn, driver: await ref.read(driverApiProvider).me());
+    try {
+      state = AuthState(
+        status: AuthStatus.signedIn,
+        driver: await ref.read(driverApiProvider).me(),
+      );
+    } on ApiException {
+      // Callers refresh the profile as a courtesy after a change they already
+      // know the outcome of. A stale profile is not worth an error for.
+    }
   }
 
   Future<OtpChallenge> requestOtp(String phone) => _auth.requestCode(phone);
 
-  Future<bool> verifyOtp(String phone, String code, {String name = ''}) async {
-    final session = await _auth.verify(phone: phone, code: code, name: name);
+  /// No name here: onboarding asks for it, and the profile screen changes it.
+  Future<bool> verifyOtp(String phone, String code) async {
+    final session = await _auth.verify(phone: phone, code: code);
     await ref.read(tokenStoreProvider).save(access: session.access, refresh: session.refresh);
     state = AuthState(status: AuthStatus.signedIn, driver: session.driver);
     await _registerDevice();

@@ -18,5 +18,8 @@ DateTime? asDate(dynamic value) {
 List<String> asStringList(dynamic value) =>
     value is List ? value.map((item) => '$item').where((item) => item.isNotEmpty).toList() : <String>[];
 
+/// A list of raw entries, for a payload of objects the caller will map itself.
+List<dynamic> asList(dynamic value) => value is List ? value : const <dynamic>[];
+
 Map<String, dynamic> asMap(dynamic value) =>
     value is Map ? value.map((key, item) => MapEntry('$key', item)) : <String, dynamic>{};

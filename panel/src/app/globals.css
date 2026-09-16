@@ -180,3 +180,176 @@
     box-shadow: 0 8px 24px -6px rgb(var(--st-shadow) / var(--st-shadow-alpha));
   }
 }
+
+/*
+ * Two structural devices carry the board, and both encode state rather than
+ * decorate it.
+ *
+ * 1. The plate. A dispatcher scans for a registration, not a row number, so the
+ *    plate is drawn as the thing they are looking for — a UK rear plate, black on
+ *    the brand yellow. It is the only gold fill on the board, which is what keeps
+ *    it findable from across the room.
+ *
+ * 2. The tread rail. A dashed rule down the left of a row, taking the mark's own
+ *    tread rhythm. The dash pattern is the status: tight and gold while a job is
+ *    moving, wide and red the moment nobody has taken it. Reading the left edge
+ *    alone tells you whether anyone is stranded.
+ */
+@layer components {
+  .plate {
+    @apply inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-xs font-bold uppercase leading-tight tracking-[0.08em];
+    background: rgb(var(--st-brand));
+    color: rgb(var(--st-on-brand));
+    border: 1px solid rgb(var(--st-on-brand) / 0.35);
+  }
+  .plate-lg {
+    @apply rounded px-2.5 py-1 text-base tracking-[0.1em];
+  }
+  .plate-empty {
+    background: rgb(var(--st-surface-sunken));
+    color: rgb(var(--st-ink-subtle));
+    border-color: rgb(var(--st-line));
+  }
+
+  /* One hard-stop gradient: a single paint, and the dashes scale with zoom. */
+  .tread {
+    --tread-colour: rgb(var(--st-line-strong));
+    --tread-dash: 5px;
+    --tread-gap: 4px;
+    padding-left: 0.875rem;
+    background-repeat: no-repeat;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--tread-colour) 0 var(--tread-dash),
+      transparent var(--tread-dash) calc(var(--tread-dash) + var(--tread-gap))
+    );
+    background-size: 3px 100%;
+  }
+  .tread-live {
+    --tread-colour: rgb(var(--st-brand));
+    --tread-dash: 7px;
+    --tread-gap: 3px;
+  }
+  .tread-alarm {
+    --tread-colour: rgb(var(--st-danger));
+    --tread-dash: 4px;
+    --tread-gap: 7px;
+  }
+  .tread-done {
+    --tread-colour: rgb(var(--st-line));
+    --tread-dash: 2px;
+    --tread-gap: 6px;
+  }
+}
+
+/*
+ * The board is glanced at from across a room, so the counts are set at a size
+ * that survives the distance and the labels stay out of their way.
+ */
+@layer components {
+  .count {
+    @apply font-display text-3xl font-bold leading-none tracking-tight tabular-nums lg:text-4xl;
+  }
+  .count-label {
+    @apply mt-1.5 block text-sm leading-tight text-ink-muted;
+  }
+}
+
+/*
+ * Motion, and the one rule it follows: nothing here decorates. Each animation
+ * below exists because a number changed while nobody was looking at it.
+ *
+ * The reduced-motion block at the foot of this file neutralises every one of
+ * them, so a dispatcher who has asked the OS for stillness gets the same board
+ * with the same information, held still.
+ */
+@layer components {
+  /*
+   * The alarm ring. A slow halo behind the unclaimed figure — somebody is
+   * stranded and no van is moving toward them. Deliberately unhurried: a fast
+   * blink reads as a broken widget and gets ignored by lunchtime, where a long
+   * breath keeps pulling the eye back across a whole shift.
+   */
+  @keyframes st-alarm-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgb(var(--st-danger) / 0.45);
+    }
+    70% {
+      box-shadow: 0 0 0 1.25rem rgb(var(--st-danger) / 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgb(var(--st-danger) / 0);
+    }
+  }
+  .alarm-ring {
+    animation: st-alarm-ring 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  /* The figure itself breathes with the ring, a hair behind it. */
+  @keyframes st-alarm-breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    55% {
+      opacity: 0.82;
+      transform: scale(1.035);
+    }
+  }
+  .alarm-breathe {
+    animation: st-alarm-breathe 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-origin: left center;
+  }
+
+  /*
+   * A count that has just moved. One pass, no loop: the point is to catch the
+   * eye that was elsewhere when the job landed, and then get out of the way.
+   */
+  @keyframes st-count-change {
+    0% {
+      background: rgb(var(--st-brand) / 0.22);
+    }
+    100% {
+      background: rgb(var(--st-brand) / 0);
+    }
+  }
+  .count-changed {
+    animation: st-count-change 1.1s ease-out 1;
+  }
+  @keyframes st-count-change-alarm {
+    0% {
+      background: rgb(var(--st-danger) / 0.26);
+    }
+    100% {
+      background: rgb(var(--st-danger) / 0);
+    }
+  }
+  .count-changed-alarm {
+    animation: st-count-change-alarm 1.1s ease-out 1;
+  }
+
+  /* The live dot on a driver pin and the rail's shift circle. */
+  @keyframes st-live-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+  .live-dot {
+    animation: st-live-dot 2s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

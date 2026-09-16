@@ -52,9 +52,32 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "Segoe UI", "Roboto", "sans-serif"],
-        display: ["var(--font-display)", "var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        // Headings share the body face; weight and tracking carry the voice.
+        display: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
+      /*
+       * The scale runs one step warmer than Tailwind's default at every size.
+       *
+       * The board is read standing up and at arm's length, not leaned into: the
+       * stock 14px body and 12px chrome are a desk-app's sizes and they cost a
+       * dispatcher a squint on every row. Shifting the ramp here rather than at
+       * the call sites keeps the existing type hierarchy exactly as designed —
+       * every `text-sm` in the panel moves together, and the ratios between
+       * steps are preserved. Line heights are re-paired rather than scaled, so
+       * dense tables gain legibility without gaining rows.
+       */
+      fontSize: {
+        xs: ["0.8125rem", { lineHeight: "1.125rem" }], // 13px — chrome, never prose
+        sm: ["0.9375rem", { lineHeight: "1.375rem" }], // 15px — body
+        base: ["1.0625rem", { lineHeight: "1.625rem" }], // 17px
+        lg: ["1.1875rem", { lineHeight: "1.75rem" }], // 19px — page + card titles
+        xl: ["1.375rem", { lineHeight: "1.875rem" }], // 22px
+        "2xl": ["1.625rem", { lineHeight: "2.125rem" }], // 26px
+        "3xl": ["2rem", { lineHeight: "2.375rem" }], // 32px — the counts
+        "4xl": ["2.5rem", { lineHeight: "2.75rem" }], // 40px
+        "5xl": ["3.25rem", { lineHeight: "1" }], // 52px — the hero's alarm figure
       },
       boxShadow: {
         sm: "0 1px 2px 0 rgb(var(--st-shadow) / var(--st-shadow-alpha))",

@@ -13,6 +13,42 @@ from apps.vehicles.services import lookup_plate
 from .models import Job, JobStatusEvent
 
 
+class DamagedTyreSerializer(serializers.Serializer):
+    """
+    One damaged wheel.
+
+    ``Job.damaged_positions`` is a JSONField, so the database will accept any
+    shape at all — this is the only thing standing between the technician and a
+    job that says the damage is at "front-left-ish". Every writer goes through
+    here.
+    """
+
+    position = serializers.ChoiceField(choices=Job.TyrePosition.choices)
+    severity = serializers.ChoiceField(
+        choices=Job.TyreSeverity.choices, required=False, allow_blank=True, default=""
+    )
+    note = serializers.CharField(max_length=140, required=False, allow_blank=True, default="")
+
+
+class DamagedPositionsField(serializers.ListField):
+    """The list of damaged wheels, de-duplicated and capped at one per position."""
+
+    child = DamagedTyreSerializer()
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("allow_empty", True)
+        kwargs.setdefault("max_length", len(Job.TyrePosition.choices))
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        entries = super().to_internal_value(data)
+        seen = {entry["position"] for entry in entries}
+        if len(seen) != len(entries):
+            raise serializers.ValidationError("Each wheel can only be listed once.")
+        return entries
+
+
 class JobStatusEventSerializer(serializers.ModelSerializer):
     actor_name = serializers.CharField(read_only=True)
 
@@ -27,6 +63,8 @@ class _JobBase(serializers.ModelSerializer):
     plate = serializers.CharField(read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     eta_minutes = serializers.IntegerField(read_only=True)
+    damaged_positions = DamagedPositionsField()
+    damaged_summary = serializers.CharField(read_only=True)
 
 
 class JobSerializer(_JobBase):
@@ -48,6 +86,7 @@ class JobSerializer(_JobBase):
             "contact_email", "issue_type", "issue_label", "description",
             "tyre_size", "looked_up_tyre_size", "customer_tyre_size", "tyre_confirmation_path",
             "disclaimer_accepted_at", "tyre_corrected_on_site", "tyre_correction_note",
+            "damaged_positions", "damaged_summary",
             "location_text", "latitude", "longitude", "location_accuracy_m", "location_source",
             "service_area", "service_area_name", "status", "status_display", "source",
             "driver", "driver_name", "driver_phone", "assigned_staff", "dispatch_rounds",
@@ -55,6 +94,42 @@ class JobSerializer(_JobBase):
             "eta_distance_metres", "eta_updated_at", "invoice_total", "maps_url",
             "created_at", "updated_at", "dispatch_started_at", "assigned_at", "accepted_at",
             "en_route_at", "arrived_at", "started_at", "completed_at", "cancelled_at",
+        )
+        read_only_fields = fields
+
+
+class JobMapSerializer(_JobBase):
+    """
+    One live call-out, as the panel's map and tracking strip need it.
+
+    Deliberately not ``JobSerializer``: the map redraws on every driver ping, and
+    shipping fifty-odd fields per job to move a pin is waste on a connection that
+    is already carrying location traffic. This is the tracking question in one
+    row — who is stranded, who is going, how far off are they.
+
+    The driver's position rides along because this is a staff surface. Section
+    4.6 keeps it off the customer's, and ``CustomerJobSerializer`` is what serves
+    them; nothing here is reachable without ``IsStaff``.
+    """
+
+    driver_name = serializers.CharField(source="driver.name", read_only=True, default="")
+    driver_phone = serializers.CharField(source="driver.phone", read_only=True, default="")
+    driver_latitude = serializers.DecimalField(
+        source="driver.latitude", max_digits=9, decimal_places=6, read_only=True, default=None
+    )
+    driver_longitude = serializers.DecimalField(
+        source="driver.longitude", max_digits=9, decimal_places=6, read_only=True, default=None
+    )
+
+    class Meta:
+        model = Job
+        fields = (
+            "id", "reference", "plate", "status", "status_display",
+            "contact_name", "contact_phone", "issue_type", "issue_label",
+            "location_text", "latitude", "longitude",
+            "driver", "driver_name", "driver_phone", "driver_latitude", "driver_longitude",
+            "eta_minutes", "eta_seconds", "eta_distance_metres", "eta_updated_at",
+            "created_at", "assigned_at", "accepted_at",
         )
         read_only_fields = fields
 
@@ -90,6 +165,7 @@ class CustomerJobSerializer(_JobBase):
         fields = (
             "id", "reference", "vehicle", "plate", "issue_type", "issue_label", "description",
             "tyre_size", "looked_up_tyre_size", "customer_tyre_size", "tyre_confirmation_path",
+            "damaged_positions", "damaged_summary",
             "location_text", "latitude", "longitude", "status", "status_display",
             "driver", "eta_seconds", "eta_minutes", "eta_updated_at", "can_cancel", "invoice",
             "created_at", "accepted_at", "en_route_at", "arrived_at", "completed_at", "cancelled_at",
@@ -134,6 +210,7 @@ class DriverJobSerializer(_JobBase):
             "id", "reference", "vehicle", "plate", "contact_name", "contact_phone",
             "issue_type", "issue_label", "description", "tyre_size", "looked_up_tyre_size",
             "customer_tyre_size", "tyre_confirmation_path", "tyre_corrected_on_site",
+            "damaged_positions", "damaged_summary",
             "location_text", "latitude", "longitude", "location_accuracy_m",
             "status", "status_display", "eta_seconds", "eta_minutes", "maps_url", "invoice",
             "created_at", "assigned_at", "accepted_at", "en_route_at", "arrived_at",
@@ -155,13 +232,16 @@ class JobCreateSerializer(serializers.ModelSerializer):
 
     plate = serializers.CharField(max_length=16, required=False, allow_blank=True)
     tyre_confirmation = TyreConfirmationInputSerializer(required=False)
+    # Declared, not inferred. A ModelSerializer maps a JSONField to a plain
+    # JSONField that accepts anything at all, and this is the untrusted path.
+    damaged_positions = DamagedPositionsField()
 
     class Meta:
         model = Job
         fields = (
             "plate", "contact_name", "contact_phone", "contact_email", "issue_type",
             "description", "location_text", "latitude", "longitude", "location_accuracy_m",
-            "location_source", "tyre_confirmation",
+            "location_source", "tyre_confirmation", "damaged_positions",
         )
 
     def validate_contact_phone(self, value):
@@ -211,14 +291,30 @@ class JobStatusUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Job.Status.choices)
     note = serializers.CharField(max_length=255, required=False, allow_blank=True)
     assigned_staff_id = serializers.IntegerField(required=False, allow_null=True)
+    force = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Move the job regardless of the section 5 lifecycle. Requires a reason.",
+    )
+
+    def validate(self, attrs):
+        """An override with no reason on the record defeats the point of allowing it."""
+        if attrs.get("force") and not (attrs.get("note") or "").strip():
+            raise serializers.ValidationError(
+                {"note": ["Say why the lifecycle is being overridden."]}
+            )
+        return attrs
 
 
 class JobStaffUpdateSerializer(serializers.ModelSerializer):
+    damaged_positions = DamagedPositionsField()
+
     class Meta:
         model = Job
         fields = (
             "contact_name", "contact_phone", "contact_email", "issue_type", "description",
             "tyre_size", "location_text", "latitude", "longitude", "internal_notes",
+            "damaged_positions",
         )
 
     def validate_contact_phone(self, value):

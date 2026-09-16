@@ -50,4 +50,12 @@ class Offer {
     final left = expiresAt!.difference(DateTime.now());
     return left.isNegative ? Duration.zero : left;
   }
+
+  /// The whole window the office allowed, so the card can draw [remaining] as a
+  /// fraction rather than as a bare number counting down out of nowhere.
+  Duration get total {
+    if (offeredAt == null || expiresAt == null) return Duration.zero;
+    final window = expiresAt!.difference(offeredAt!);
+    return window.isNegative ? Duration.zero : window;
+  }
 }

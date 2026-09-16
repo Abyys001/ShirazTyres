@@ -104,7 +104,38 @@ class CustomerJob {
   final List<TimelineEntry> timeline;
 
   bool get isLive => status != 'completed' && status != 'cancelled';
+
+  /// Rows seeded before the label was recorded come back with it empty. A
+  /// headline is the largest thing on the card, so it never renders blank.
+  String get issueHeadline => issueLabel.isEmpty ? 'Tyre call-out' : issueLabel;
+
   bool get sizeWasOverridden => confirmationPath == 'overridden';
+
+  /// Short labels for the progress rail — the whole job in five words.
+  static const stages = <String>['Sent', 'Assigned', 'On the way', 'With you', 'Done'];
+
+  /// How many of [stages] are behind us. Drives the rail, so the shape of the
+  /// screen answers "where are we up to" before any of it is read.
+  int get stage {
+    switch (status) {
+      case 'submitted':
+      case 'dispatching':
+      case 'assigned':
+      case 'unclaimed':
+        return 1;
+      case 'accepted':
+        return 2;
+      case 'en_route':
+        return 3;
+      case 'arrived':
+      case 'in_progress':
+        return 4;
+      case 'completed':
+        return 5;
+      default:
+        return 0;
+    }
+  }
 
   /// The wording the customer sees. `assigned` is internal: until a technician
   /// has accepted, the honest answer is that we are still looking.

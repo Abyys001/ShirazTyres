@@ -128,9 +128,24 @@ def set_setting(key: str, value: Any, *, updated_by=None) -> Any:
     if spec is None:
         raise serializers.ValidationError({key: ["Unknown setting."]})
     stored = validate_value(spec, value)
+    previous = get_setting(key)
     Setting.objects.update_or_create(key=key, defaults={"value": stored, "updated_by": updated_by})
     invalidate_cache()
     logger.info("setting.changed key=%s by=%s", key, getattr(updated_by, "email", "system"))
+
+    # "It used to work" is nearly always a setting somebody changed, so the
+    # before and after are both kept rather than only the new value.
+    from apps.audit.services import record
+
+    record(
+        "settings",
+        f"Setting changed: {key}",
+        actor=getattr(updated_by, "name", "") or getattr(updated_by, "email", "system"),
+        subject_type="setting",
+        subject_id=key,
+        previous=previous,
+        value=stored,
+    )
     return get_setting(key)
 
 
@@ -151,4 +166,10 @@ def set_many(values: dict[str, Any], *, updated_by=None) -> dict[str, Any]:
 
     for key, value in values.items():
         set_setting(key, value, updated_by=updated_by)
+
+    # The settings screen is the one place two people in the office are most
+    # likely to be at once, each about to overwrite the other's change.
+    from apps.realtime.publish import publish_config_event
+
+    publish_config_event("settings")
     return all_settings()

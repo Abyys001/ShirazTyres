@@ -61,9 +61,12 @@ export function SettingsForm({ specs, values }: { specs: SettingSpec[]; values: 
         return (
           <div key={spec.key} className="grid gap-2 border-b border-line pb-4 last:border-0 sm:grid-cols-3">
             <div className="sm:col-span-1">
-              <p className="text-sm font-medium">{spec.label}</p>
-              {spec.help_text ? <p className="text-xs text-ink-muted">{spec.help_text}</p> : null}
-              <p className="mt-1 font-mono text-[10px] text-ink-subtle">{spec.key}</p>
+              <p className="text-sm font-medium" title={spec.key}>
+                {spec.label}
+              </p>
+              {spec.help_text ? (
+                <p className="mt-0.5 text-xs text-ink-muted">{spec.help_text}</p>
+              ) : null}
             </div>
             <div className="sm:col-span-2">
               <SettingInput spec={spec} value={current} onChange={(value) => update(spec.key, value)} />
@@ -76,11 +79,40 @@ export function SettingsForm({ specs, values }: { specs: SettingSpec[]; values: 
       })}
 
       {save.isError ? <ErrorNote>{save.error.message}</ErrorNote> : null}
-      {save.isSuccess && !dirty ? <p className="text-sm text-success">Saved.</p> : null}
 
-      <Button type="submit" disabled={!dirty || save.isPending}>
-        {save.isPending ? "Saving…" : "Save changes"}
-      </Button>
+      {/*
+       * The save follows the reader down. Dispatch and Operational are long
+       * enough that a button at the bottom meant scrolling past every field to
+       * commit a change made at the top, and a change left uncommitted looks
+       * exactly like one that was saved.
+       */}
+      <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-wrap items-center gap-3 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur">
+        <Button type="submit" disabled={!dirty || save.isPending}>
+          {save.isPending ? "Saving…" : "Save changes"}
+        </Button>
+        {dirty ? (
+          <>
+            <span className="text-sm text-warning">
+              {Object.keys(draft).length} unsaved change
+              {Object.keys(draft).length === 1 ? "" : "s"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft({});
+                setInvalid([]);
+              }}
+              className="text-sm text-ink-muted hover:text-ink"
+            >
+              Discard
+            </button>
+          </>
+        ) : save.isSuccess ? (
+          <span className="text-sm text-success">Saved. It applies from the next call-out.</span>
+        ) : (
+          <span className="text-sm text-ink-subtle">Nothing changed.</span>
+        )}
+      </div>
     </form>
   );
 }

@@ -4,7 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
-import { AlertBanner, Card, EmptyState, Select, Stat, VerificationBadge } from "@/components/ui";
+import {
+  AlertBanner,
+  Card,
+  EmptyState,
+  Select,
+  Stat,
+  StatStrip,
+  VerificationBadge,
+} from "@/components/ui";
 import { api } from "@/lib/client-api";
 import { formatDate } from "@/lib/format";
 import type { Compliance, Driver, Paginated } from "@/types/api";
@@ -47,12 +55,12 @@ export default function DriversPage() {
         </AlertBanner>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Pending" value={compliance.data?.counts.pending ?? 0} tone="alert" />
+      <StatStrip>
+        <Stat label="Awaiting approval" value={compliance.data?.counts.pending ?? 0} tone="alert" />
         <Stat label="Approved" value={compliance.data?.counts.approved ?? 0} />
         <Stat label="Suspended" value={compliance.data?.counts.suspended ?? 0} tone="alert" />
-        <Stat label="Online now" value={compliance.data?.counts.online ?? 0} />
-      </div>
+        <Stat label="On shift now" value={compliance.data?.counts.online ?? 0} />
+      </StatStrip>
 
       {expiring.length > 0 ? (
         <Card title="Documents expiring">
@@ -97,7 +105,7 @@ export default function DriversPage() {
         {drivers.data && drivers.data.results.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
+              <thead className="text-left text-xs text-ink-subtle">
                 <tr className="border-b border-line">
                   <th className="py-2 pr-3">Name</th>
                   <th className="py-2 pr-3">Phone</th>
@@ -121,7 +129,25 @@ export default function DriversPage() {
                     <td className="py-2 pr-3">
                       <VerificationBadge status={driver.verification_status} label={driver.status_display} />
                     </td>
-                    <td className="py-2 pr-3 text-xs">{driver.is_online ? "yes" : "no"}</td>
+                    {/*
+                     * On shift is the one cell worth acting on from here: it is
+                     * asked when somebody wants to know where that van actually
+                     * is, so it answers by going there.
+                     */}
+                    <td className="py-2 pr-3 text-xs">
+                      {driver.is_online ? (
+                        <Link
+                          href={`/map?driver=${driver.id}`}
+                          className="inline-flex items-center gap-1.5 text-success hover:underline"
+                          title="Show this driver on the live map"
+                        >
+                          <span aria-hidden className="live-dot h-1.5 w-1.5 rounded-full bg-success" />
+                          on shift
+                        </Link>
+                      ) : (
+                        <span className="text-ink-subtle">off</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3 text-xs">{driver.active_jobs}</td>
                     <td className="py-2 pr-3 text-xs text-ink-muted">
                       {driver.missing_documents.length > 0

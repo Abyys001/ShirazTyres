@@ -145,3 +145,64 @@ def test_refresh_is_scoped(api, customer):
     wrong = api.post("/api/v1/auth/staff/refresh", {"refresh": tokens["refresh"]}, format="json")
     assert wrong.status_code in (401, 403)
     assert api.post("/api/v1/auth/customer/refresh", {"refresh": tokens["refresh"]}, format="json").status_code == 200
+
+
+# ------------------------------------------------- staff administration -------
+
+
+def test_an_owner_creates_a_shop_owner_who_can_sign_in(staff_client, api):
+    created = staff_client.post(
+        "/api/v1/staff",
+        {
+            "name": "Second Owner",
+            "email": "shop@shiraztyres.co.uk",
+            "role": "shop_owner",
+            "password": "a-long-enough-password",
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    assert created.data["role"] == "shop_owner"
+
+    signed_in = api.post(
+        "/api/v1/auth/staff/login",
+        {"email": "shop@shiraztyres.co.uk", "password": "a-long-enough-password"},
+        format="json",
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.data["user"]["role"] == "shop_owner"
+
+
+def test_office_staff_may_not_manage_accounts(api, office_staff):
+    """The office works the board; it does not decide who else can."""
+    login = api.post(
+        "/api/v1/auth/staff/login",
+        {"email": office_staff.email, "password": "pw-test-1234"},
+        format="json",
+    )
+    api.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+    assert api.get("/api/v1/staff").status_code == 403
+    assert api.post("/api/v1/staff", {}, format="json").status_code == 403
+
+
+def test_changing_your_own_password_needs_the_current_one(staff_client):
+    wrong = staff_client.post(
+        "/api/v1/auth/staff/password",
+        {"current_password": "not-it", "new_password": "a-long-enough-password"},
+        format="json",
+    )
+    assert wrong.status_code == 400
+
+    right = staff_client.post(
+        "/api/v1/auth/staff/password",
+        {"current_password": "pw-test-1234", "new_password": "a-different-long-password"},
+        format="json",
+    )
+    assert right.status_code == 200
+
+
+def test_deactivating_yourself_is_refused(staff_client, owner):
+    """Locking the only owner out of their own panel is not a supported outcome."""
+    response = staff_client.delete(f"/api/v1/staff/{owner.pk}")
+    assert response.status_code == 400

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api_exception.dart';
@@ -9,13 +11,16 @@ import 'push.dart';
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {
-  const AuthState({required this.status, this.customer});
+  const AuthState({required this.status, this.customer, this.error});
 
   const AuthState.unknown() : this(status: AuthStatus.unknown);
   const AuthState.signedOut() : this(status: AuthStatus.signedOut);
 
   final AuthStatus status;
   final Customer? customer;
+
+  /// Why there is no profile, when the session itself is still good.
+  final String? error;
 
   bool get isSignedIn => status == AuthStatus.signedIn;
   bool get isResolved => status != AuthStatus.unknown;
@@ -25,30 +30,77 @@ class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
     ref.listen<int>(sessionRevokedProvider, (_, __) => _onAuthLost());
-    Future<void>.microtask(restore);
+    unawaited(restore());
     return const AuthState.unknown();
   }
 
+  /// Cold start. The app is installed on one phone and signing in once is meant
+  /// to be enough, so a stored refresh token *is* a signed-in session until the
+  /// API refuses it. Anything short of a refusal — aeroplane mode, a captive
+  /// portal, a flat 500 — reopens on the cached profile and re-confirms itself
+  /// on the first call that gets through.
   Future<void> restore() async {
-    final access = await ref.read(tokenStoreProvider).readAccess();
-    if (access == null || access.isEmpty) {
+    state = const AuthState.unknown();
+    try {
+      await _restore();
+    } catch (error) {
+      // Reading the keystore, or a cached profile written by an older build, can
+      // both throw. Whatever happened, the app must not be left on the splash
+      // screen: the sign-in screen is always a way back in.
+      state = AuthState(status: AuthStatus.signedOut, error: '$error');
+    }
+  }
+
+  Future<void> _restore() async {
+    final store = ref.read(tokenStoreProvider);
+    final refresh = await store.readRefresh();
+    if (refresh == null || refresh.isEmpty) {
       state = const AuthState.signedOut();
       return;
     }
+
+    Map<String, dynamic>? cached = await store.readProfile();
+    if (cached != null) {
+      try {
+        state = AuthState(status: AuthStatus.signedIn, customer: Customer.fromJson(cached));
+      } catch (_) {
+        // A profile this build cannot read is worth no more than no profile.
+        cached = null;
+      }
+    }
+
     try {
-      state = AuthState(status: AuthStatus.signedIn, customer: await ref.read(authApiProvider).me());
+      final profile = await ref.read(authApiProvider).meRaw();
+      await store.saveProfile(profile);
+      state = AuthState(status: AuthStatus.signedIn, customer: Customer.fromJson(profile));
       await _registerDevice();
-    } on ApiException {
-      await ref.read(tokenStoreProvider).clear();
-      state = const AuthState.signedOut();
+    } on ApiException catch (error) {
+      if (error.isUnauthorised) {
+        // The client already tried to refresh and was told no. This one is over.
+        await store.clear();
+        state = const AuthState.signedOut();
+      } else if (cached == null) {
+        state = AuthState(status: AuthStatus.signedIn, error: error.message);
+      }
+    } catch (error) {
+      if (cached == null) {
+        state = AuthState(
+          status: AuthStatus.signedIn,
+          error: 'Could not load your account. $error',
+        );
+      }
     }
   }
 
   Future<OtpChallenge> requestOtp(String phone) => ref.read(authApiProvider).requestCode(phone);
 
-  Future<void> verifyOtp(String phone, String code) async {
+  /// Returns true when this code created the account, so the caller can welcome
+  /// a new customer rather than a returning one. No name is collected here: it
+  /// is asked for on the account screen, where it can also be changed.
+  Future<bool> verifyOtp(String phone, String code) async {
     final session = await ref.read(authApiProvider).verifyOtp(phone: phone, code: code);
     await _adopt(session.access, session.refresh, session.customer);
+    return session.isNew;
   }
 
   /// Section 4.1 — the same account whichever route the customer took.
@@ -77,6 +129,7 @@ class AuthController extends Notifier<AuthState> {
       }
     }
     await ref.read(tokenStoreProvider).clear();
+    await ref.read(jobCacheProvider).clear();
     state = const AuthState.signedOut();
   }
 
@@ -97,6 +150,9 @@ class AuthController extends Notifier<AuthState> {
   }
 
   void _onAuthLost() {
+    // The tokens are already gone; the cached call-out must not outlive them on
+    // a handset that gets signed into a second account.
+    unawaited(ref.read(jobCacheProvider).clear());
     state = const AuthState.signedOut();
   }
 }

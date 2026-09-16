@@ -1,11 +1,15 @@
 import 'package:intl/intl.dart';
 
 final _dateTime = DateFormat('d MMM, HH:mm');
+final _date = DateFormat('d MMM yyyy');
 final _time = DateFormat('HH:mm');
 
 String formatDateTime(DateTime? value) => value == null ? '—' : _dateTime.format(value);
 
 String formatTime(DateTime? value) => value == null ? '—' : _time.format(value);
+
+/// For anything that expires. The time of day is noise on an MOT date.
+String formatDate(DateTime? value) => value == null ? '—' : _date.format(value);
 
 String formatRelative(DateTime? value) {
   if (value == null) return '—';

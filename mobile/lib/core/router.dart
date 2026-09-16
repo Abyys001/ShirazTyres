@@ -11,7 +11,9 @@ import '../screens/onboarding_screen.dart';
 import '../screens/otp_screen.dart';
 import '../screens/phone_screen.dart';
 import '../screens/profile_screen.dart';
+import '../screens/shell.dart';
 import '../screens/splash_screen.dart';
+import '../screens/vehicle_screen.dart';
 
 /// Bridges Riverpod state onto go_router's Listenable-based refresh.
 class _AuthRefresh extends ChangeNotifier {
@@ -59,10 +61,39 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+
+      // Each destination keeps its own navigation stack and scroll position,
+      // so switching tabs never loses where somebody was. The order here lines
+      // up one-to-one with the bottom bar in AppShell.
+      StatefulShellRoute.indexedStack(
+        builder: (_, __, shell) => AppShell(shell: shell),
+        branches: <StatefulShellBranch>[
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(path: '/history', builder: (_, __) => const HistoryScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(path: '/vehicles', builder: (_, __) => const VehicleScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
+            ],
+          ),
+        ],
+      ),
+
+      // Full-screen flows: a job in hand and the paperwork that gets you one
+      // both want the whole phone.
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
-      GoRoute(path: '/history', builder: (_, __) => const HistoryScreen()),
-      GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
       GoRoute(
         path: '/jobs/:id',
         builder: (_, state) => JobScreen(jobId: int.tryParse(state.pathParameters['id'] ?? '') ?? 0),

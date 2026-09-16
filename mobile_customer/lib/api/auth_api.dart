@@ -17,6 +17,8 @@ class AuthApi {
     return OtpChallenge.fromJson(asMap(data));
   }
 
+  /// No name: an account created here is nameless until the customer fills it
+  /// in on the account screen, which is the only place it can be changed.
   Future<CustomerSession> verifyOtp({required String phone, required String code}) async {
     final data = await _client.post(
       '/auth/customer/otp/verify',
@@ -45,7 +47,11 @@ class AuthApi {
     return Customer.fromJson(asMap(data));
   }
 
-  Future<Customer> me() async => Customer.fromJson(asMap(await _client.get('/customers/me')));
+  Future<Customer> me() async => Customer.fromJson(await meRaw());
+
+  /// The same call, undecoded, so the session can be cached verbatim and read
+  /// back by a cold start that has no signal.
+  Future<Map<String, dynamic>> meRaw() async => asMap(await _client.get('/customers/me'));
 
   Future<Customer> updateMe({String? name, String? email}) async {
     final data = await _client.patch(

@@ -36,7 +36,8 @@ services:
       - static_files:/app/staticfiles
       - media_files:/app/media
     ports:
-      - "8000:8000"
+      # Overridable so the stack can co-exist with anything already on :8000.
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -75,12 +76,15 @@ services:
       API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://backend:8000/api/v1}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
       NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000/ws}
+      # Without these the map draws pins on an empty background — section 10.1.
+      NEXT_PUBLIC_MAP_TILE_URL: ${MAP_TILE_URL:-}
+      NEXT_PUBLIC_MAP_TILE_ATTRIBUTION: ${MAP_TILE_ATTRIBUTION:-© OpenStreetMap contributors}
     volumes:
       - ./panel:/app
       - /app/node_modules
       - /app/.next
     ports:
-      - "3000:3000"
+      - "${PANEL_HOST_PORT:-3000}:3000"
     command: ["npm", "run", "dev"]
     depends_on:
       - backend
@@ -97,13 +101,14 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
       NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000/ws}
       NEXT_PUBLIC_MAP_TILE_URL: ${MAP_TILE_URL:-}
+      NEXT_PUBLIC_MAP_TILE_ATTRIBUTION: ${MAP_TILE_ATTRIBUTION:-© OpenStreetMap contributors}
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_OAUTH_WEB_CLIENT_ID:-}
     volumes:
       - ./website:/app
       - /app/node_modules
       - /app/.next
     ports:
-      - "3001:3000"
+      - "${WEBSITE_HOST_PORT:-3001}:3000"
     command: ["npm", "run", "dev"]
     depends_on:
       - backend

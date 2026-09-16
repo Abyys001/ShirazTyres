@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.notifications",
     "apps.realtime",
+    "apps.audit",
 ]
 
 MIDDLEWARE = [
@@ -156,6 +157,7 @@ REST_FRAMEWORK = {
         "otp_request": env("THROTTLE_OTP_REQUEST", "5/hour"),
         "otp_verify": env("THROTTLE_OTP_VERIFY", "10/hour"),
         "vehicle_lookup": env("THROTTLE_VEHICLE_LOOKUP", "30/hour"),
+        "driver_lookup": env("THROTTLE_DRIVER_LOOKUP", "120/hour"),
         "job_create": env("THROTTLE_JOB_CREATE", "10/hour"),
     },
     "EXCEPTION_HANDLER": "config.exceptions.api_exception_handler",
@@ -181,9 +183,12 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
+# The apps are installed on one phone and sign in once. `refresh_pair` mints a
+# brand-new refresh on every use, so the window slides for anyone who opens the
+# app; the lifetime below is really "how long a phone may sit untouched".
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MINUTES", 30)),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 30)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 180)),
     "SIGNING_KEY": SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
@@ -229,7 +234,7 @@ CELERY_BEAT_SCHEDULE = {
 OTP_CODE_LENGTH = env_int("OTP_CODE_LENGTH", 6)
 OTP_TTL_SECONDS = env_int("OTP_TTL_SECONDS", 300)
 OTP_MAX_ATTEMPTS = env_int("OTP_MAX_ATTEMPTS", 5)
-OTP_RESEND_COOLDOWN_SECONDS = env_int("OTP_RESEND_COOLDOWN_SECONDS", 60)
+OTP_RESEND_COOLDOWN_SECONDS = env_int("OTP_RESEND_COOLDOWN_SECONDS", 10)
 
 # --- Providers -------------------------------------------------------------
 SMS_PROVIDER = env("SMS_PROVIDER", "mock")  # mock | twilio
@@ -282,6 +287,15 @@ EMAIL_BACKEND = env(
     "EMAIL_BACKEND",
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
+# --------------------------------------------------------------- Stripe -----
+# Section 7.2: payment capture. `mock` needs no keys and touches no network, so
+# the whole invoice flow runs locally and in tests with no spend. Never deploy on
+# mock — /health reports the mode for exactly that reason.
+STRIPE_MODE = env("STRIPE_MODE", "mock")  # mock | test | live
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", "")
+
 EMAIL_HOST = env("EMAIL_HOST", "")
 EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")

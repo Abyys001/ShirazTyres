@@ -7,15 +7,27 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button, Notice } from "@/components/ui";
 
-const TILE_URL = process.env.NEXT_PUBLIC_MAP_TILE_URL || "";
-const ATTRIBUTION = process.env.NEXT_PUBLIC_MAP_ATTRIBUTION || "© OpenStreetMap contributors";
+/*
+ * Same reasoning as the panel's map (section 10.1): production must not point at
+ * OSM's own tile server, so the URL is configuration — but shipped empty the pin
+ * fallback drew a marker on a flat void, and this is the *only* way to give a
+ * position when the browser refuses geolocation. Development falls back to OSM;
+ * a production build with no tile source is still usable, just without a basemap.
+ */
+const OSM_TILES = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILE_URL =
+  process.env.NEXT_PUBLIC_MAP_TILE_URL ||
+  (process.env.NODE_ENV === "development" ? OSM_TILES : "");
+const ATTRIBUTION =
+  process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || "© OpenStreetMap contributors";
 const LONDON: [number, number] = [51.5074, -0.1278];
 
 export interface Position {
   latitude: number;
   longitude: number;
   accuracy: number | null;
-  source: "browser" | "map_pin";
+  /** The API's `Job.LocationSource` values — not a vocabulary of our own. */
+  source: "browser" | "pin";
 }
 
 /**
@@ -90,7 +102,7 @@ export function LocationPicker({
         latitude: Number(latlng.lat.toFixed(6)),
         longitude: Number(latlng.lng.toFixed(6)),
         accuracy: null,
-        source: "map_pin",
+        source: "pin",
       });
     };
 

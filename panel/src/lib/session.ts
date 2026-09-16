@@ -2,14 +2,13 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { ACCESS_COOKIE, REFRESH_COOKIE } from "./config";
-
-const BASE_COOKIE = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-};
+import {
+  ACCESS_COOKIE,
+  ACCESS_MAX_AGE,
+  COOKIE_OPTIONS,
+  REFRESH_COOKIE,
+  REFRESH_MAX_AGE,
+} from "./config";
 
 export interface TokenPair {
   access: string;
@@ -19,8 +18,8 @@ export interface TokenPair {
 /** Tokens never reach client JavaScript — every browser call goes through /api/proxy. */
 export async function setSession({ access, refresh }: TokenPair) {
   const jar = await cookies();
-  jar.set(ACCESS_COOKIE, access, { ...BASE_COOKIE, maxAge: 60 * 30 });
-  jar.set(REFRESH_COOKIE, refresh, { ...BASE_COOKIE, maxAge: 60 * 60 * 24 * 30 });
+  jar.set(ACCESS_COOKIE, access, { ...COOKIE_OPTIONS, maxAge: ACCESS_MAX_AGE });
+  jar.set(REFRESH_COOKIE, refresh, { ...COOKIE_OPTIONS, maxAge: REFRESH_MAX_AGE });
 }
 
 export async function clearSession() {

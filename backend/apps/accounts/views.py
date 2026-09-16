@@ -1,14 +1,21 @@
+from django.conf import settings
 from django.db.models import Count
+from django.http import Http404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.models import AuditEvent
+from apps.audit.services import record
+from apps.realtime.mixins import AnnouncesConfigChange
+
 from .google import verify_id_token
-from .models import Customer, OtpCode
-from .permissions import IsCustomer, IsStaff
+from .models import Customer, OtpCode, StaffUser
+from .permissions import IsAdminStaff, IsCustomer, IsStaff
 from .serializers import (
     AttachPhoneSerializer,
     CustomerSelfSerializer,
@@ -16,8 +23,12 @@ from .serializers import (
     GoogleSignInSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
+    PasswordChangeSerializer,
+    PasswordResetSerializer,
     RefreshSerializer,
+    StaffCreateSerializer,
     StaffLoginSerializer,
+    StaffUpdateSerializer,
     StaffUserSerializer,
     TokenPairSerializer,
 )
@@ -122,6 +133,16 @@ class StaffLoginView(APIView):
         serializer = StaffLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
+
+        record(
+            "staff",
+            f"{user.name or user.email} signed in to the panel",
+            actor=user.name or user.email,
+            subject_type="staff",
+            subject_id=user.pk,
+            email=user.email,
+            role=user.role,
+        )
         return Response({**issue_pair(SCOPE_STAFF, user.pk), "user": StaffUserSerializer(user).data})
 
 
@@ -202,3 +223,192 @@ class CustomerViewSet(viewsets.ModelViewSet):
             )
         result = issue_otp(customer.phone)
         return Response({"expires_at": result.expires_at, "resend_after_seconds": result.resend_after_seconds})
+
+
+# ------------------------------------------------------- staff administration --
+
+
+@extend_schema(tags=["staff"])
+class StaffViewSet(AnnouncesConfigChange, viewsets.ModelViewSet):
+    """
+    Panel accounts, managed from the panel.
+
+    Creating staff was previously a `manage.py` command on a production box,
+    which meant in practice it did not happen and everybody shared the owner's
+    login. Restricted to owners and shop owners: the office works the board, it
+    does not decide who else can.
+    """
+
+    config_kind = "staff"
+    queryset = StaffUser.objects.all()
+    permission_classes = [IsAdminStaff]
+    http_method_names = ["get", "post", "patch", "delete"]
+    search_fields = ["name", "email"]
+    ordering_fields = ["name", "date_joined", "role"]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return StaffCreateSerializer
+        if self.action == "partial_update":
+            return StaffUpdateSerializer
+        return StaffUserSerializer
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        self.announce_config_change()
+        record(
+            "staff",
+            f"Staff account created for {user.name} ({user.get_role_display()})",
+            actor=self.request.user.name or self.request.user.email,
+            subject_type="staff",
+            subject_id=user.pk,
+            email=user.email,
+            role=user.role,
+        )
+
+    def perform_update(self, serializer):
+        user = serializer.save()
+        self.announce_config_change()
+        record(
+            "staff",
+            f"Staff account updated: {user.name}",
+            actor=self.request.user.name or self.request.user.email,
+            subject_type="staff",
+            subject_id=user.pk,
+            email=user.email,
+            role=user.role,
+            is_active=user.is_active,
+        )
+
+    def perform_destroy(self, instance):
+        """
+        Deactivate rather than delete.
+
+        A staff user is referenced by every job they touched and every invoice
+        they voided; removing the row would either cascade that history away or
+        fail on the constraint. Losing the ability to sign in is what "remove
+        this person" actually means here.
+        """
+        if instance.pk == self.request.user.pk:
+            raise ValidationError({"detail": ["You cannot deactivate your own account."]})
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+        self.announce_config_change()
+        record(
+            "staff",
+            f"Staff account deactivated: {instance.name}",
+            severity=AuditEvent.Severity.WARNING,
+            actor=self.request.user.name or self.request.user.email,
+            subject_type="staff",
+            subject_id=instance.pk,
+            email=instance.email,
+        )
+
+    @extend_schema(request=PasswordResetSerializer, responses={200: StaffUserSerializer})
+    @action(detail=True, methods=["post"], url_path="set-password")
+    def set_password(self, request, pk=None):
+        """An administrator setting somebody else's password — the forgotten-password path."""
+        user = self.get_object()
+        serializer = PasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        record(
+            "staff",
+            f"Password reset for {user.name} by an administrator",
+            severity=AuditEvent.Severity.WARNING,
+            actor=request.user.name or request.user.email,
+            subject_type="staff",
+            subject_id=user.pk,
+        )
+        return Response(StaffUserSerializer(user).data)
+
+
+@extend_schema(tags=["staff"], request=PasswordChangeSerializer, responses={200: dict})
+class StaffPasswordView(APIView):
+    """Changing your own password. Any signed-in staff user may do this."""
+
+    permission_classes = [IsStaff]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+
+        if not request.user.check_password(serializer.validated_data["current_password"]):
+            raise ValidationError({"current_password": ["That is not your current password."]})
+
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        record(
+            "staff",
+            f"{request.user.name} changed their own password",
+            actor=request.user.name or request.user.email,
+            subject_type="staff",
+            subject_id=request.user.pk,
+        )
+        # The tokens already issued stay valid: this is a password change, not a
+        # compromise response, and signing the user out of the tab they are
+        # typing in would be surprising rather than safer.
+        return Response({"detail": "Password changed."})
+
+
+@extend_schema(tags=["auth"], responses={200: dict})
+class DevAccountsView(APIView):
+    """
+    The seeded accounts a development build may sign in as.
+
+    The apps used to carry this list hard-coded (`mobile/lib/core/config.dart`),
+    which meant a driver created in the panel never appeared on the sign-in
+    screen and the listed numbers drifted from the database every time the seed
+    changed. Reading it from the database fixes both: what the panel creates is
+    immediately signable-in, and nothing is offered that does not exist.
+
+    **Three independent locks, because this lists real phone numbers.**
+
+    1. ``DEBUG`` must be on. A production image never serves it.
+    2. The request must not be over HTTPS — a debug build talking to a deployed
+       host is the case the apps' own ``devSignInEnabled`` already refuses, and
+       the server refuses it here too rather than trusting the client.
+    3. It returns phone numbers and names only. No tokens, no codes, no way in
+       that the ordinary OTP flow does not already provide.
+    """
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not settings.DEBUG or request.is_secure():
+            raise Http404
+
+        from apps.drivers.models import Driver
+
+        drivers = Driver.objects.filter(is_active=True).order_by("-created_at")[:25]
+        customers = Customer.objects.filter(is_active=True).order_by("-id")[:25]
+
+        return Response(
+            {
+                "drivers": [
+                    {
+                        "phone": driver.phone,
+                        "name": driver.name or "Unnamed driver",
+                        "state": driver.get_verification_status_display(),
+                        "is_approved": driver.is_approved,
+                        "is_online": driver.is_online,
+                    }
+                    for driver in drivers
+                ],
+                "customers": [
+                    {
+                        "phone": customer.phone,
+                        "name": customer.display_name,
+                        "state": "Customer",
+                        "is_approved": True,
+                        "is_online": False,
+                    }
+                    for customer in customers
+                    if customer.phone
+                ],
+                # Section 4.1: the mock Google route resolves to a seeded account.
+                "google_mock": "mock:sara@example.com" if settings.GOOGLE_OAUTH_MOCK else None,
+            }
+        )

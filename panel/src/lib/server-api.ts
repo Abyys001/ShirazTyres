@@ -39,7 +39,9 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
     if (refreshed.ok) {
       const tokens = (await refreshed.json()) as { access: string; refresh: string };
-      await setSession(tokens);
+      // Persisting only works in a route handler; during a Server Component render the
+      // cookie jar is read-only, and the middleware will store the pair on the next hop.
+      await setSession(tokens).catch(() => undefined);
       response = await request(path, init, tokens.access);
     }
   }

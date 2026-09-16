@@ -1,13 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/api_exception.dart';
+import '../core/theme.dart';
 import '../providers/auth.dart';
+import '../widgets/auth_kit.dart';
+import '../widgets/brand_logo.dart';
+import '../widgets/dev_sign_in.dart';
+import '../widgets/ui_kit.dart';
 
+/// Step 1 of driver registration, continued: proving the number.
+///
+/// Nothing else is asked for here. The name belongs to onboarding, where it can
+/// be corrected, and this screen is six digits and one button.
 class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({
     required this.phone,
@@ -28,30 +36,37 @@ class OtpScreen extends ConsumerStatefulWidget {
 
 class _OtpScreenState extends ConsumerState<OtpScreen> {
   final _code = TextEditingController();
-  final _name = TextEditingController();
+  final _codeFocus = FocusNode();
   Timer? _ticker;
   int _secondsLeft = 0;
+  int _resendFrom = 0;
+  String _debugCode = '';
   bool _verifying = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _debugCode = widget.debugCode;
     _code.text = widget.debugCode;
     _startCountdown(widget.resendAfterSeconds);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _codeFocus.requestFocus());
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
     _code.dispose();
-    _name.dispose();
+    _codeFocus.dispose();
     super.dispose();
   }
 
   void _startCountdown(int seconds) {
     _ticker?.cancel();
-    setState(() => _secondsLeft = seconds);
+    setState(() {
+      _secondsLeft = seconds;
+      _resendFrom = seconds;
+    });
     _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return timer.cancel();
       if (_secondsLeft <= 1) {
@@ -68,7 +83,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       final challenge = await ref.read(authControllerProvider.notifier).requestOtp(widget.phone);
       if (!mounted) return;
       _startCountdown(challenge.resendAfterSeconds);
-      if (challenge.debugCode.isNotEmpty) _code.text = challenge.debugCode;
+      setState(() {
+        _error = null;
+        if (challenge.debugCode.isNotEmpty) {
+          _debugCode = challenge.debugCode;
+          _code.text = challenge.debugCode;
+        }
+      });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     }
@@ -85,16 +106,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       _error = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).verifyOtp(
-            widget.phone,
-            code,
-            name: _name.text.trim(),
-          );
-      if (mounted) context.go('/');
+      final created = await ref.read(authControllerProvider.notifier).verifyOtp(widget.phone, code);
+      if (!mounted) return;
+      // The router sends an unapproved driver to onboarding on its own; this is
+      // only here so a deep-linked push does not leave the stack on the code.
+      context.go(created ? '/onboarding' : '/');
     } on ApiException catch (error) {
-      if (mounted) {
-        setState(() => _error = error.fieldError('code') ?? error.message);
-      }
+      if (mounted) setState(() => _error = error.fieldError('code') ?? error.message);
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
@@ -102,57 +120,65 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify your number')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+      backgroundColor: palette.canvas,
+      body: AuthBackdrop(
+        child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('We texted a code to ${widget.phone}.'),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _code,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w600),
-                inputFormatters: <TextInputFormatter>[
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(8),
-                ],
-                decoration: const InputDecoration(hintText: '••••••'),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Your name (first time only)',
-                  prefixIcon: Icon(Icons.person_outline),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: () => context.pop(),
+                  icon: Icon(Icons.arrow_back),
                 ),
               ),
-              if (_error != null) ...<Widget>[
-                const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _verifying ? null : _verify,
-                child: _verifying
-                    ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.4),
-                      )
-                    : const Text('Verify and continue'),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: _secondsLeft > 0 ? null : _resend,
-                child: Text(
-                  _secondsLeft > 0 ? 'Resend code in ${_secondsLeft}s' : 'Resend code',
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(Space.xl, Space.lg, Space.xl, Space.xl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      const BrandLogo(height: 44),
+                      const SizedBox(height: Space.xl),
+                      Text('Six digits', style: theme.textTheme.displaySmall),
+                      const SizedBox(height: Space.xs),
+                      Text(
+                        widget.phone,
+                        style: palette.mono.copyWith(fontSize: 18, color: palette.inkMuted),
+                      ),
+                      const SizedBox(height: Space.xxl),
+                      CodeField(
+                        controller: _code,
+                        focusNode: _codeFocus,
+                        enabled: !_verifying,
+                        onCompleted: () {
+                          if (!_verifying) _verify();
+                        },
+                      ),
+                      if (_error != null) ...<Widget>[
+                        const SizedBox(height: Space.lg),
+                        InlineNotice(_error!),
+                      ],
+                      const SizedBox(height: Space.xl),
+                      BusyButton(label: 'Continue', busy: _verifying, onPressed: _verify),
+                      const SizedBox(height: Space.md),
+                      Center(
+                        child: ResendRing(
+                          secondsLeft: _secondsLeft,
+                          total: _resendFrom,
+                          onResend: _resend,
+                        ),
+                      ),
+                      const SizedBox(height: Space.xl),
+                      // No account list here — the number is already chosen.
+                      DevSignInPanel(debugCode: _debugCode),
+                    ],
+                  ),
                 ),
               ),
             ],

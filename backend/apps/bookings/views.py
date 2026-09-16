@@ -36,6 +36,7 @@ from .serializers import (
     DriverJobSerializer,
     JobCreateSerializer,
     JobDetailSerializer,
+    JobMapSerializer,
     JobSerializer,
     JobStaffUpdateSerializer,
     JobStatsSerializer,
@@ -111,6 +112,19 @@ class CustomerJobViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post"]
     throttle_scope = "job_create"
     queryset = Job.objects.none()
+
+    def get_throttles(self):
+        """The limit is on reporting call-outs, not on reading your own.
+
+        A scope set on the viewset covers every action in it, so an app polling
+        its live ETA every thirty seconds spent the same ten-an-hour budget that
+        submitting a puncture needs — and a customer who had watched their own
+        job for five minutes got a 429 when they finally pressed send. Only the
+        write is rationed.
+        """
+        if self.action != "create":
+            return []
+        return super().get_throttles()
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -427,6 +441,7 @@ class JobViewSet(viewsets.ModelViewSet):
             actor_type=JobStatusEvent.Actor.STAFF,
             note=serializer.validated_data.get("note", ""),
             assigned_staff=assigned_staff,
+            force=serializer.validated_data.get("force", False),
         )
         return Response(JobDetailSerializer(job).data)
 
@@ -484,6 +499,25 @@ class JobViewSet(viewsets.ModelViewSet):
                 many=True,
             ).data
         )
+
+    @extend_schema(responses={200: JobMapSerializer(many=True)})
+    @action(detail=False, methods=["get"])
+    def map(self, request):
+        """
+        Every live call-out that has a position, for the panel's map.
+
+        Unpositioned jobs are excluded rather than dropped at the far end: a job
+        with no coordinates cannot be drawn, and sending it only to have the
+        client filter it costs the same bytes on every driver ping. They are
+        still on the board — this endpoint feeds the map, not the queue.
+        """
+        jobs = (
+            Job.objects.filter(latitude__isnull=False, longitude__isnull=False)
+            .exclude(status__in=Job.TERMINAL_STATUSES)
+            .select_related("driver")
+            .order_by("-created_at")
+        )
+        return Response(JobMapSerializer(jobs, many=True).data)
 
     @extend_schema(responses={200: JobStatsSerializer})
     @action(detail=False, methods=["get"])

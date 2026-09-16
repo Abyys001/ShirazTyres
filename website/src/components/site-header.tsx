@@ -27,6 +27,9 @@ export function SiteHeader({ signedIn }: { signedIn: boolean }) {
               <Link href="/jobs" className="text-ink-muted hover:text-ink">
                 My call-outs
               </Link>
+              <Link href="/garage" className="text-ink-muted hover:text-ink">
+                My vehicles
+              </Link>
               <button onClick={signOut} className="text-ink-muted underline hover:text-ink">
                 Sign out
               </button>

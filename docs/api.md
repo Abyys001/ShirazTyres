@@ -200,6 +200,23 @@ same scoped access token, verified the same way.
 The customer channel never carries a coordinate. That boundary lives in
 `apps/realtime/publish.py` and is covered by tests.
 
+### The events
+
+| Event | Channel | Sent when |
+|---|---|---|
+| `job.created` `job.status` `job.eta` `job.tyre` `job.invoice` | panel, customer, driver | the job changes; each audience gets its own serializer |
+| `driver.location` | panel | a van reports a fix — the whole position, applied to the map cache rather than triggering a refetch |
+| `driver.shift` `driver.verification` `driver.documents` | panel, that driver | a technician's shift or standing changes |
+| `offer.new` `offer.withdrawn` | that driver | a job is offered to them, or taken away — `reason` says which |
+| `dispatch.offered` `dispatch.withdrawn` `dispatch.rejected` | panel | a dispatch round moves, including a rejection that does not escalate |
+| `invoice.issued` `invoice.paid` `invoice.voided` `invoice.refunded` | panel | money changes |
+| `config.settings` `config.service-items` `config.service-areas` `config.staff` | panel | the catalogue the office works from changed, in this or another session — the kind only, the reader refetches |
+
+Every state change the office can see is on this list. Anything that mutates a
+job, driver, invoice, offer or setting without publishing is a bug: it leaves a
+screen that has quietly stopped being true, which is indistinguishable from a
+quiet shift.
+
 ## Throttling
 
 | Scope | Default |
@@ -208,5 +225,8 @@ The customer channel never carries a coordinate. That boundary lives in
 | `otp_verify` | 10/hour |
 | `vehicle_lookup` | 30/hour |
 | `job_create` | 10/hour |
+| `driver_lookup` | 120/hour |
 
-All are `THROTTLE_*` environment variables.
+All are `THROTTLE_*` environment variables. A demo signs in and raises jobs far
+more often than a customer does, so `.env.example` carries commented-out looser
+values for that case; production wants the defaults above.

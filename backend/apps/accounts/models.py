@@ -28,7 +28,15 @@ class StaffUser(AbstractBaseUser, PermissionsMixin):
 
     class Role(models.TextChoices):
         OWNER = "owner", "Owner"
-        STAFF = "staff", "Staff"
+        SHOP_OWNER = "shop_owner", "Shop owner"
+        STAFF = "staff", "Office"
+
+    #: Roles that may administer the business rather than merely work in it —
+    #: manage staff, change settings, void invoices. Section 17 keeps multi-branch
+    #: out of version 1, so a shop owner is a role, not a tenant: they see the
+    #: same single business the owner does, and the distinction is what they may
+    #: change, not what they may see.
+    ADMIN_ROLES = frozenset({Role.OWNER, Role.SHOP_OWNER})
 
     email = models.EmailField(unique=True)
     name = models.CharField(max_length=120)
@@ -52,6 +60,11 @@ class StaffUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_owner(self):
         return self.role == self.Role.OWNER
+
+    @property
+    def is_admin(self):
+        """Owner or shop owner — allowed to change how the business runs."""
+        return self.role in self.ADMIN_ROLES
 
 
 class Customer(models.Model):

@@ -1,4 +1,5 @@
 import '../core/api_client.dart';
+import '../models/damaged_tyre.dart';
 import '../models/job.dart';
 import '../models/json.dart';
 import '../models/paginated.dart';
@@ -35,9 +36,24 @@ class JobApi {
   Future<Paginated<CustomerJob>> myJobs() async =>
       Paginated<CustomerJob>.fromJson(await _client.get('/my/jobs'), CustomerJob.fromJson);
 
+  /// The same page, undecoded, so it can be cached verbatim and read back by a
+  /// cold start that has no signal.
+  Future<List<Map<String, dynamic>>> myJobsRaw() async {
+    final data = await _client.get('/my/jobs');
+    final results = data is List ? data : asMap(data)['results'];
+    return results is List ? results.map(asMap).toList() : <Map<String, dynamic>>[];
+  }
+
   Future<CustomerJob?> active() async {
+    final data = await activeRaw();
+    return data == null ? null : CustomerJob.fromJson(data);
+  }
+
+  /// Undecoded, for the same reason as [myJobsRaw]. Null is a real answer here:
+  /// "you have no call-out running" is worth caching too.
+  Future<Map<String, dynamic>?> activeRaw() async {
     final data = asMap(await _client.get('/my/jobs/active'));
-    return data['job'] == null ? null : CustomerJob.fromJson(asMap(data['job']));
+    return data['job'] == null ? null : asMap(data['job']);
   }
 
   Future<CustomerJob> job(int id) async =>
@@ -51,11 +67,13 @@ class JobApi {
     required double latitude,
     required double longitude,
     int? accuracyMetres,
+    String locationSource = 'device',
     required String confirmationPath,
     required String tyreSize,
     String loadIndex = '',
     String speedRating = '',
     bool disclaimerAccepted = false,
+    List<DamagedTyre> damaged = const <DamagedTyre>[],
   }) async {
     final data = await _client.post(
       '/my/jobs',
@@ -68,8 +86,9 @@ class JobApi {
         'latitude': latitude.toStringAsFixed(6),
         'longitude': longitude.toStringAsFixed(6),
         if (accuracyMetres != null) 'location_accuracy_m': accuracyMetres,
-        // Section 4.4: the app uses the native device permission.
-        'location_source': 'device',
+        // Section 4.4: the native device permission, or a pin the customer
+        // dropped themselves when the phone cannot get a fix.
+        'location_source': locationSource,
         'tyre_confirmation': <String, dynamic>{
           'confirmation_path': confirmationPath,
           'tyre_size': tyreSize,
@@ -77,6 +96,10 @@ class JobApi {
           if (speedRating.isNotEmpty) 'speed_rating': speedRating,
           'disclaimer_accepted': disclaimerAccepted,
         },
+        // Omitted rather than sent empty: the API tells the technician the
+        // difference between "no damage reported" and "the customer skipped it".
+        if (damaged.isNotEmpty)
+          'damaged_positions': damaged.map((tyre) => tyre.toJson()).toList(),
       },
     );
     return CustomerJob.fromJson(asMap(data));

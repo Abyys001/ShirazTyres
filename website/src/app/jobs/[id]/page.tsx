@@ -104,6 +104,10 @@ export default function JobPage() {
                 <Detail label="Vehicle" value={data.vehicle?.description || data.plate} />
                 <Detail label="Registration" value={data.vehicle?.display_plate || data.plate} />
                 <Detail label="Problem" value={data.issue_label} />
+                <Detail
+                  label="Damaged wheel"
+                  value={data.damaged_summary || "not specified"}
+                />
                 <Detail label="Tyre size" value={data.tyre_size} />
                 <Detail label="Where" value={data.location_text || "position shared"} />
                 <Detail label="Requested" value={formatDateTime(data.created_at)} />

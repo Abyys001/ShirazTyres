@@ -43,6 +43,19 @@ class Job(models.Model):
         PANEL = "panel", "Owner panel"
         PHONE = "phone", "Phone call"
 
+    class TyrePosition(models.TextChoices):
+        FRONT_LEFT = "front_left", "Nearside front"
+        FRONT_RIGHT = "front_right", "Offside front"
+        REAR_LEFT = "rear_left", "Nearside rear"
+        REAR_RIGHT = "rear_right", "Offside rear"
+        SPARE = "spare", "Spare"
+
+    class TyreSeverity(models.TextChoices):
+        FLAT = "flat", "Completely flat"
+        DEFLATING = "deflating", "Losing air"
+        DAMAGED = "damaged", "Damaged but holding"
+        BLOWOUT = "blowout", "Blowout"
+
     class LocationSource(models.TextChoices):
         DEVICE = "device", "Native device location"
         BROWSER = "browser", "Browser geolocation"
@@ -50,6 +63,8 @@ class Job(models.Model):
         STAFF = "staff", "Entered by staff"
 
     TERMINAL_STATUSES = frozenset({Status.COMPLETED, Status.CANCELLED})
+
+
 
     #: Statuses in which a driver counts against the concurrency cap.
     DRIVER_BUSY_STATUSES = frozenset(
@@ -109,6 +124,20 @@ class Job(models.Model):
     disclaimer_accepted_at = models.DateTimeField(null=True, blank=True)
     tyre_corrected_on_site = models.BooleanField(default=False)
     tyre_correction_note = models.CharField(max_length=255, blank=True)
+
+    #: Which wheels are actually damaged, and how badly.
+    #:
+    #: A list of ``{"position": "front_left", "severity": "flat", "note": ""}``.
+    #: Stored as JSON rather than a related table on purpose: it is a short,
+    #: bounded list that is always read with its job and never queried across
+    #: jobs, so a join on every board render buys nothing. ``TyrePosition`` and
+    #: the serializer are what keep it well-formed — the database will hold any
+    #: JSON, so nothing may write here without going through them.
+    #:
+    #: The van is loaded from this. One flat nearside front and "two tyres, both
+    #: offside" are different jobs, and before this the technician found out on
+    #: arrival.
+    damaged_positions = models.JSONField(default=list, blank=True)
 
     # --- Location, section 4.4 ---------------------------------------------
     location_text = models.CharField(max_length=255, blank=True)
@@ -186,6 +215,27 @@ class Job(models.Model):
     @property
     def eta_minutes(self) -> int | None:
         return None if self.eta_seconds is None else max(1, round(self.eta_seconds / 60))
+
+    @property
+    def damaged_summary(self) -> str:
+        """
+        The damaged wheels in words, for a text message and a table cell.
+
+        Falls back to the stored value for anything unrecognised rather than
+        dropping it: a position this build does not know about is still
+        something the technician needs to be told.
+        """
+        labels = []
+        for entry in self.damaged_positions or []:
+            if not isinstance(entry, dict):
+                continue
+            position = entry.get("position", "")
+            try:
+                labels.append(self.TyrePosition(position).label)
+            except ValueError:
+                if position:
+                    labels.append(str(position))
+        return ", ".join(labels)
 
     def can_transition_to(self, new_status: str) -> bool:
         return new_status in self.ALLOWED_TRANSITIONS[self.Status(self.status)]

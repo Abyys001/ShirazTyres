@@ -35,6 +35,11 @@ class Customer {
 
   String get displayName => name.isNotEmpty ? name : (phone.isNotEmpty ? phone : email);
 
+  /// What a greeting uses. A surname in a "hi" reads as a letter from the bank,
+  /// and a phone number reads as no greeting at all — so this is empty rather
+  /// than wrong when we have not been told a name yet.
+  String get firstName => name.isEmpty ? '' : name.trim().split(RegExp(r'\s+')).first;
+
   /// A Google-first customer has no number yet; attaching one joins the two
   /// sign-in routes to this single account (section 4.1).
   bool get needsPhone => phone.isEmpty;

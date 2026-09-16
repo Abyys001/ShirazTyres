@@ -38,10 +38,33 @@ make seed        # demo data: owner@shiraztyres.co.uk / shiraz1234
 | Owner panel | <http://localhost:3000> |
 | Customer website | <http://localhost:3001> |
 
+Set `BACKEND_HOST_PORT`, `PANEL_HOST_PORT` and `WEBSITE_HOST_PORT` if something
+on your machine already holds those ports — and move `NEXT_PUBLIC_API_BASE_URL`,
+`NEXT_PUBLIC_WS_BASE_URL`, `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` with
+them, because the browser talks to the published port and the API checks the
+origin it came from.
+
 Out of the box everything external is mocked — `SMS_PROVIDER=mock`,
 `PUSH_PROVIDER=mock`, `VEHICLE_LOOKUP_MOCK=1`, `GOOGLE_OAUTH_MOCK=1`,
-`ROUTING_PROVIDER=mock` — so the whole flow runs with no API keys and no spend.
-Mock OTPs come back in the response as `debug_code`.
+`ROUTING_PROVIDER=mock`, `STRIPE_MODE=mock` — so the whole flow runs with no API
+keys and no spend. **Settings → System** shows which are still stubbed, because
+everything mocked looks identical to everything working.
+Mock OTPs come back in the response as `debug_code`, and both apps surface that
+code on screen rather than making you dig it out of a log.
+
+### Signing in
+
+| Surface | Credential |
+|---|---|
+| Owner panel | `owner@shiraztyres.co.uk` / `shiraz1234` |
+| Driver app | `07700900301` … `07700900304` approved, `07700900305` pending |
+| Customer app | `07700900101` … `07700900103`, or any number to register |
+
+Each sign-in screen lists these in a **Development sign-in** panel — one tap
+fills the field, and the verification code appears above it. The panel is gated
+on a debug build talking to a local API, so it cannot reach a release.
+Full detail, including Google sign-in without OAuth credentials and what to do
+when a sign-in fails, is in [`docs/dev-logins.md`](docs/dev-logins.md).
 
 Both Flutter apps point at the emulator's host by default. The default
 workflow boots the Pixel_Tyres emulator and runs **both** apps in debug mode
@@ -73,6 +96,7 @@ cd mobile_customer && flutter run -d emulator-5554   # customer app
 | `make emulator` | boot Pixel_Tyres AVD + run both Flutter apps (debug, hot reload) |
 | `make test` | backend pytest suite in Docker |
 | `make test-local` | the same suite on SQLite, no Docker needed |
+| `make test-demo` | the whole call-out across all three surfaces, live, against the running stack |
 | `make lint` | ruff |
 | `make schema` | regenerate `backend/openapi.yaml` |
 | `make types` | schema, then TypeScript types for the panel and the website |
@@ -162,5 +186,7 @@ docs/              API surface, data model, deployment
 
 - [`docs/api.md`](docs/api.md) — endpoint reference and the three auth flows
 - [`docs/data-model.md`](docs/data-model.md) — entities, the status machine, dispatch
+- [`docs/design-tokens.md`](docs/design-tokens.md) — the palette, type and the shared UI kit
+- [`docs/dev-logins.md`](docs/dev-logins.md) — every development credential, in one place
 - [`docs/deployment.md`](docs/deployment.md) — going live, real providers, GDPR
 - [`Project_view.md`](Project_view.md) — the version 2.0 specification this implements

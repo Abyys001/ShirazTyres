@@ -62,10 +62,24 @@ class ApiClient {
       return handler.next(error);
     }
 
-    if (!await _refreshTokens()) {
-      await _tokens.clear();
-      onAuthLost?.call();
-      return handler.next(error);
+    switch (await _refreshTokens()) {
+      case _Refresh.renewed:
+        break;
+      case _Refresh.unreachable:
+        // Walking into a lift is not a revoked session. The tokens stay put, and
+        // the failure is reported as what it was — we could not reach the token
+        // endpoint — rather than as the 401 that started it, so nothing
+        // upstream reads it as "you are signed out".
+        return handler.next(
+          DioException.connectionError(
+            requestOptions: options,
+            reason: 'Could not reach ShirazTyres to renew this session.',
+          ),
+        );
+      case _Refresh.rejected:
+        await _tokens.clear();
+        onAuthLost?.call();
+        return handler.next(error);
     }
 
     options.extra[_retriedFlag] = true;
@@ -77,10 +91,13 @@ class ApiClient {
     }
   }
 
-  Future<bool> _refreshTokens() async {
+  /// Three outcomes rather than a boolean: "could not ask" and "was told no"
+  /// have opposite consequences for a session that is meant to last as long as
+  /// the app is installed.
+  Future<_Refresh> _refreshTokens() async {
     final refresh = await _tokens.readRefresh();
     if (refresh == null || refresh.isEmpty) {
-      return false;
+      return _Refresh.rejected;
     }
     // A bare client: the interceptors above must not run against the refresh call.
     final bare = Dio(
@@ -97,15 +114,17 @@ class ApiClient {
       );
       final data = response.data;
       if (data == null || data['access'] is! String) {
-        return false;
+        return _Refresh.unreachable;
       }
       await _tokens.save(
         access: data['access'] as String,
         refresh: data['refresh'] is String ? data['refresh'] as String : refresh,
       );
-      return true;
-    } on DioException {
-      return false;
+      return _Refresh.renewed;
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      final refused = status == 400 || status == 401 || status == 403;
+      return refused ? _Refresh.rejected : _Refresh.unreachable;
     }
   }
 
@@ -153,3 +172,6 @@ class ApiClient {
     }
   }
 }
+
+/// The result of asking the API for a new pair of tokens.
+enum _Refresh { renewed, unreachable, rejected }

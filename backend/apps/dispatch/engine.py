@@ -262,6 +262,8 @@ def accept_offer(driver: Driver, job: Job) -> Job:
 
 def reject_offer(driver: Driver, job: Job, *, reason: str = "") -> Job:
     """Section 6.3. A rejection escalates now rather than burning the timeout."""
+    from apps.realtime.publish import publish_dispatch_event
+
     escalate_now = False
 
     with transaction.atomic():
@@ -304,6 +306,12 @@ def reject_offer(driver: Driver, job: Job, *, reason: str = "") -> Job:
 
     logger.info("dispatch.rejected reference=%s driver=%s escalating=%s",
                 job.reference, driver.pk, escalate_now)
+
+    # An escalation announces itself through the next round, but a rejection in
+    # driver-selection mode with offers still open changes nothing else the panel
+    # can see. Without this, the office watches a name it has already lost.
+    publish_dispatch_event(job, "rejected")
+
     if escalate_now:
         _escalate_async(job.pk)
     return job
@@ -401,24 +409,35 @@ def mark_unclaimed(job: Job) -> Job:
 
 def assign_manually(job: Job, driver: Driver, *, staff=None) -> Job:
     """Staff intervention — the unclaimed queue's way out, and the phone-in override."""
+    from apps.realtime.publish import publish_offer_withdrawn
+
     if not driver.is_approved:
         raise ValidationError({"driver": ["That driver is not approved for dispatch."]})
     if not driver.is_active:
         raise ValidationError({"driver": ["That driver's account is disabled."]})
 
     now = timezone.now()
+    withdrawn: list[int] = []
     with transaction.atomic():
         DispatchAttempt.objects.filter(job=job, outcome=DispatchAttempt.Outcome.PENDING).update(
             outcome=DispatchAttempt.Outcome.SUPERSEDED, resolved_at=now
         )
-        DispatchOffer.objects.filter(
+        open_offers = DispatchOffer.objects.filter(
             attempt__job=job, state=DispatchOffer.State.OFFERED
-        ).update(state=DispatchOffer.State.WITHDRAWN, responded_at=now)
+        )
+        # Read the ids before the update: afterwards the filter matches nothing,
+        # and a driver whose offer is never withdrawn on their screen taps accept
+        # on a job the office has already given to somebody else.
+        withdrawn = list(open_offers.values_list("pk", flat=True))
+        open_offers.update(state=DispatchOffer.State.WITHDRAWN, responded_at=now)
 
         job = transition_job(
             job, Job.Status.ASSIGNED, set_driver=driver, staff=staff,
             actor_type=JobStatusEvent.Actor.STAFF, note="Assigned by staff.",
         )
+
+    for offer_id in withdrawn:
+        publish_offer_withdrawn(offer_id, "The office assigned this job to another driver.")
 
     refresh_eta(job)
     logger.info("dispatch.manual_assign reference=%s driver=%s", job.reference, driver.pk)

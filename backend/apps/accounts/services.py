@@ -65,6 +65,24 @@ def issue_otp(phone: str, purpose: str = OtpCode.Purpose.LOGIN) -> OtpIssueResul
     )
     logger.info("otp.issued phone=%s purpose=%s", phone[-4:].rjust(len(phone), "*"), purpose)
 
+    # The code itself is written down only where it is already public: with the
+    # mock provider there is no text message to read it out of, so the API
+    # returns it as `debug_code` and the sign-in screens print it. Against a real
+    # provider it is a live credential and the log records only that one was sent.
+    from apps.audit.services import otp_is_visible, record
+
+    visible = otp_is_visible()
+    record(
+        "auth",
+        f"Verification code sent to {phone} ({purpose})",
+        actor="system",
+        subject_type="phone",
+        subject_id=phone,
+        purpose=purpose,
+        expires_at=expires_at.isoformat(),
+        code=code if visible else "[not recorded — live SMS provider]",
+    )
+
     return OtpIssueResult(
         expires_at=expires_at,
         resend_after_seconds=settings.OTP_RESEND_COOLDOWN_SECONDS,
@@ -103,8 +121,32 @@ def verify_otp(phone: str, code: str, purpose: str = OtpCode.Purpose.LOGIN) -> N
                 remaining = settings.OTP_MAX_ATTEMPTS - otp.attempts
                 error = {"code": [f"Incorrect code. {remaining} attempt(s) remaining."]}
 
+    from apps.audit.models import AuditEvent
+    from apps.audit.services import record
+
     if error:
+        # Repeated failures on one number are what a brute-force attempt looks
+        # like from here, so they are logged at warning with the reason intact.
+        record(
+            "auth",
+            f"Verification failed for {phone} ({purpose})",
+            severity=AuditEvent.Severity.WARNING,
+            actor="system",
+            subject_type="phone",
+            subject_id=phone,
+            purpose=purpose,
+            reason=next(iter(error.values()))[0],
+        )
         raise OtpError(error)
+
+    record(
+        "auth",
+        f"Verified {phone} ({purpose})",
+        actor="system",
+        subject_type="phone",
+        subject_id=phone,
+        purpose=purpose,
+    )
 
 
 def _touch_login(customer: Customer, updates: list[str]) -> None:

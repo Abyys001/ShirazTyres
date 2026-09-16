@@ -10,14 +10,25 @@ from .models import Driver, DriverDocument, DriverLocation, DriverVehicle
 class DriverVehicleSerializer(serializers.ModelSerializer):
     display_plate = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
+    mot_days_remaining = serializers.IntegerField(read_only=True)
+    tax_days_remaining = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = DriverVehicle
         fields = (
             "id", "plate", "display_plate", "description", "make", "model", "colour",
-            "year_of_manufacture", "is_primary", "created_at", "updated_at",
+            "year_of_manufacture", "is_primary", "fuel_type", "engine_capacity",
+            "co2_emissions", "tax_status", "tax_due_date", "mot_status", "mot_expiry_date",
+            "mot_days_remaining", "tax_days_remaining", "dvla_fetched_at",
+            "created_at", "updated_at",
         )
-        read_only_fields = ("id", "display_plate", "description", "created_at", "updated_at")
+        # Everything DVLA answers for is filled in from the plate, never posted.
+        read_only_fields = (
+            "id", "display_plate", "description", "fuel_type", "engine_capacity",
+            "co2_emissions", "tax_status", "tax_due_date", "mot_status", "mot_expiry_date",
+            "mot_days_remaining", "tax_days_remaining", "dvla_fetched_at",
+            "created_at", "updated_at",
+        )
 
     def validate_plate(self, value):
         return normalise_plate(value)

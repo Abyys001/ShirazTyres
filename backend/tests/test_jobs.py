@@ -170,3 +170,134 @@ def test_stats_counts_the_open_queue(staff_client, make_job, driver):
     assert response.data["submitted"] == 2
     assert response.data["open_total"] == 2
     assert response.data["drivers_online"] == 1
+
+
+def test_map_lists_positioned_open_jobs(staff_client, make_job):
+    """The map feed carries the tracking answers and drops what it cannot draw."""
+    make_job()
+    make_job(latitude=None, longitude=None)
+
+    response = staff_client.get("/api/v1/jobs/map")
+
+    assert response.status_code == 200
+    assert len(response.data) == 1
+    row = response.data[0]
+    # Everything the tracking strip asks for, in one row.
+    assert {"reference", "plate", "status", "contact_phone", "driver_phone",
+            "eta_distance_metres", "latitude"} <= set(row)
+
+
+def test_map_excludes_finished_jobs(staff_client, make_job):
+    """A completed call-out is history, not something to keep a pin on."""
+    from apps.bookings.models import Job
+
+    job = make_job()
+    Job.objects.filter(pk=job.pk).update(status=Job.Status.COMPLETED)
+
+    assert staff_client.get("/api/v1/jobs/map").data == []
+
+
+def test_map_is_staff_only(customer_client, make_job):
+    """Section 4.6 — a driver's live position never reaches a customer surface."""
+    make_job()
+    assert customer_client.get("/api/v1/jobs/map").status_code in (401, 403, 404)
+
+
+def test_staff_override_moves_a_job_the_lifecycle_forbids(staff_client, make_job):
+    """Reality does not always take the allowed transitions — section 5 is not a cage."""
+    job = make_job()
+    blocked = staff_client.post(
+        f"/api/v1/jobs/{job.pk}/status", {"status": "completed"}, format="json"
+    )
+    assert blocked.status_code == 400
+
+    forced = staff_client.post(
+        f"/api/v1/jobs/{job.pk}/status",
+        {"status": "completed", "force": True, "note": "Finished on paper, driver's phone died."},
+        format="json",
+    )
+    assert forced.status_code == 200
+    assert forced.data["status"] == "completed"
+
+    # The override is on the record, attributed, and marked as one.
+    event = forced.data["status_events"][-1]
+    assert event["to_status"] == "completed"
+    assert event["actor_type"] == "staff"
+    assert event["note"].startswith("Override:")
+
+
+def test_override_demands_a_reason(staff_client, make_job):
+    job = make_job()
+    response = staff_client.post(
+        f"/api/v1/jobs/{job.pk}/status", {"status": "completed", "force": True}, format="json"
+    )
+    assert response.status_code == 400
+    assert "note" in response.data["errors"]
+
+
+def test_normal_transitions_are_still_checked(staff_client, make_job):
+    """`force` defaults off — the lifecycle still governs every ordinary move."""
+    job = make_job()
+    response = staff_client.post(
+        f"/api/v1/jobs/{job.pk}/status", {"status": "arrived", "note": "oops"}, format="json"
+    )
+    assert response.status_code == 400
+
+
+# ------------------------------------------------- damaged tyre positions -----
+
+
+def test_customer_records_which_tyres_are_damaged(customer_client, job_payload):
+    """Section 7.1: the van is loaded from this, so it travels with the job."""
+    payload = {
+        **job_payload,
+        "damaged_positions": [
+            {"position": "front_left", "severity": "flat", "note": "Kerbed it"},
+            {"position": "rear_right", "severity": "deflating"},
+        ],
+    }
+    response = customer_client.post("/api/v1/my/jobs", payload, format="json")
+
+    assert response.status_code == 201, response.data
+    assert len(response.data["damaged_positions"]) == 2
+    assert response.data["damaged_summary"] == "Nearside front, Offside rear"
+
+
+def test_an_unknown_wheel_is_refused(customer_client, job_payload):
+    """The column is JSON, so the serializer is the only thing keeping it sane."""
+    response = customer_client.post(
+        "/api/v1/my/jobs",
+        {**job_payload, "damaged_positions": [{"position": "front_leftish"}]},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "damaged_positions" in response.data["errors"]
+
+
+def test_the_same_wheel_cannot_be_listed_twice(customer_client, job_payload):
+    response = customer_client.post(
+        "/api/v1/my/jobs",
+        {
+            **job_payload,
+            "damaged_positions": [{"position": "spare"}, {"position": "spare"}],
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+def test_the_technician_is_told_which_wheels(driver_client, make_job, driver):
+    from apps.bookings.models import Job
+    from apps.bookings.services import transition_job
+
+    job = make_job()
+    job.damaged_positions = [{"position": "rear_left", "severity": "blowout", "note": ""}]
+    job.save(update_fields=["damaged_positions"])
+    transition_job(job, Job.Status.DISPATCHING)
+    transition_job(job, Job.Status.ASSIGNED, set_driver=driver)
+
+    response = driver_client.get(f"/api/v1/driver/jobs/{job.pk}")
+
+    assert response.status_code == 200, response.data
+    assert response.data["damaged_summary"] == "Nearside rear"
+    assert response.data["damaged_positions"][0]["severity"] == "blowout"

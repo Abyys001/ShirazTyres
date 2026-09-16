@@ -17,6 +17,17 @@ from .models import Driver, DriverDocument, DriverLocation
 logger = logging.getLogger(__name__)
 
 
+def _announce(driver: Driver, kind: str) -> None:
+    """Every change of standing or shift, straight to the panel and the driver's own app.
+
+    The roster, the map and the technician's own home screen are three views of one
+    record; none of them should be waiting on a poll to find out it moved.
+    """
+    from apps.realtime.publish import publish_driver_event
+
+    publish_driver_event(driver, kind)
+
+
 def get_or_create_driver(phone: str, name: str = "") -> tuple[Driver, bool]:
     driver, created = Driver.objects.get_or_create(phone=phone, defaults={"name": name})
     updates = []
@@ -63,6 +74,7 @@ def set_verification(
     driver.save(update_fields=updates)
     logger.info("driver.verification driver=%s %s->%s", driver.pk, previous, status)
     transaction.on_commit(lambda: notify_driver_verification.delay(driver.pk, status, note))
+    transaction.on_commit(lambda: _announce(driver, "verification"))
     return driver
 
 
@@ -88,6 +100,7 @@ def set_online(driver: Driver, online: bool) -> Driver:
         ]
     )
     logger.info("driver.online driver=%s online=%s", driver.pk, online)
+    transaction.on_commit(lambda: _announce(driver, "shift"))
     return driver
 
 
@@ -152,6 +165,7 @@ def review_document(document: DriverDocument, status: str, *, by=None, note: str
     # An approval can complete the required set, but never auto-approves the driver —
     # section 8.2 keeps that an administrator's decision.
     logger.info("driver.document_reviewed document=%s status=%s", document.pk, status)
+    transaction.on_commit(lambda: _announce(document.driver, "documents"))
     return document
 
 
