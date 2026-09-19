@@ -20,7 +20,9 @@ function LoginForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // ?error= is how /api/auth/dev-login reports a refusal: it redirects back
+  // here, and there is no fetch response to read on this side.
+  const [error, setError] = useState<string | null>(params.get("error"));
   const [pending, setPending] = useState(false);
 
   /**
@@ -99,23 +101,25 @@ function LoginForm() {
           <ul className="mt-3 space-y-1">
             {DEV_ACCOUNTS.map((account) => (
               <li key={account.email}>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => {
-                    // Fill the fields as well, so a failed sign-in leaves
-                    // something to correct rather than two empty boxes.
-                    setEmail(account.email);
-                    setPassword(account.password);
-                    void signIn(account.email, account.password);
-                  }}
-                  className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-surface-raised disabled:opacity-50"
-                >
-                  <span className="block text-sm tabular text-ink">{account.email}</span>
-                  <span className="block text-xs text-ink-subtle">
-                    {account.role}, password {account.password}
-                  </span>
-                </button>
+                {/*
+                 * A real form post, not an onClick: this has to work on the
+                 * click that lands before the page has hydrated, which on a
+                 * dev build over a network is most of the first few seconds.
+                 */}
+                <form method="POST" action="/api/auth/dev-login">
+                  <input type="hidden" name="email" value={account.email} />
+                  <input type="hidden" name="password" value={account.password} />
+                  <input type="hidden" name="next" value={params.get("next") ?? "/jobs"} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-surface-raised"
+                  >
+                    <span className="block text-sm tabular text-ink">{account.email}</span>
+                    <span className="block text-xs text-ink-subtle">
+                      {account.role}, password {account.password}
+                    </span>
+                  </button>
+                </form>
               </li>
             ))}
           </ul>

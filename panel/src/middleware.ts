@@ -10,7 +10,7 @@ import {
   REFRESH_MAX_AGE,
 } from "@/lib/config";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/dev-login", "/api/auth/logout"];
 
 interface TokenPair {
   access: string;

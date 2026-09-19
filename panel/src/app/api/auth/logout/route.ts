@@ -16,9 +16,11 @@ export async function POST() {
 export async function GET(request: NextRequest) {
   await clearSession();
 
-  const login = new URL("/login", request.url);
   const next = request.nextUrl.searchParams.get("next");
-  if (next?.startsWith("/")) login.searchParams.set("next", next);
+  const query = next?.startsWith("/") ? `?${new URLSearchParams({ next })}` : "";
 
-  return NextResponse.redirect(login);
+  // A relative Location, not `NextResponse.redirect`: that needs an absolute
+  // URL and builds it from `request.url`, which inside the container is
+  // http://localhost:3000 — it would send the browser to its own localhost.
+  return new NextResponse(null, { status: 307, headers: { Location: `/login${query}` } });
 }
