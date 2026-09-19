@@ -75,6 +75,25 @@ class Driver {
   /// What still stands between this driver and their first job (section 8).
   bool get onboardingComplete =>
       name.isNotEmpty && vehicles.isNotEmpty && missingDocuments.isEmpty;
+
+  /// The same thing, in words somebody can act on.
+  ///
+  /// `missing_documents` arrives as API slugs — `right_to_work`, `mot` — which
+  /// are fine in a payload and no use at all in a sentence on a phone.
+  List<String> get outstanding => <String>[
+        if (name.isEmpty) 'your name',
+        if (vehicles.isEmpty) 'your van',
+        for (final document in missingDocuments) documentLabel(document),
+      ];
+
+  /// An API slug — `right_to_work`, `mot` — as something readable.
+  static String documentLabel(String type) => switch (type) {
+        'insurance' => 'an insurance certificate',
+        'licence' => 'a driving licence',
+        'mot' => 'an MOT certificate',
+        'right_to_work' => 'proof of right to work',
+        _ => type.replaceAll('_', ' '),
+      };
 }
 
 class DriverVehicle {

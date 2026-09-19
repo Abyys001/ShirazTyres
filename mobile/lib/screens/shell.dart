@@ -14,7 +14,12 @@ class AppShell extends StatelessWidget {
   final StatefulNavigationShell shell;
 
   static const _items = <NavItem>[
-    NavItem(icon: Icons.bolt_outlined, activeIcon: Icons.bolt, label: 'Shift'),
+    // A clock, not a lightning bolt. The bolt was borrowed from the on-shift
+    // badge, where it means "live" — in the rail it sat next to a receipt, a
+    // car and a person and read as speed or power rather than as a place. A
+    // shift is a stretch of time you are on or off, and this is the one tab
+    // that answers which.
+    NavItem(icon: Icons.schedule_outlined, activeIcon: Icons.schedule, label: 'Shift'),
     NavItem(icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long, label: 'Jobs'),
     NavItem(
       icon: Icons.directions_car_outlined,

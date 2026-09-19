@@ -39,10 +39,14 @@ Any number not in the list registers a new driver in `pending`, which is the
 path to walk when testing Section 8.1.
 
 An unapproved driver is refused by every dispatch endpoint, so the app asks for
-none of them: the shift screen is the standing, and it says whose move it is —
-*Finish setting up* while something is outstanding, *Waiting for approval* once
-it is all in. Approve `07700900305` from **Drivers → Awaiting approval** in the
-panel and the offers and the board appear on their phone without it being
+none of them. The **Shift** tab answers one question — has the office approved
+this account? — and shows the shift switch only when it has; otherwise it says
+*Not approved yet*. Registration is a separate thing and gates nothing: it lives
+under **Account**, which names what is still outstanding and offers the form.
+An approved technician goes on shift with the form unfinished.
+
+Approve `07700900305` from **Drivers → Awaiting approval** in the panel and the
+switch, the offers and the board appear on their phone without it being
 reopened, because the decision goes out on the driver's own channel.
 
 **The list is no longer compiled into the app.** Both sign-in screens read it

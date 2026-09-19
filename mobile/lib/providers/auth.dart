@@ -9,7 +9,6 @@ import '../models/driver.dart';
 import '../models/otp_challenge.dart';
 import 'api.dart';
 import 'push.dart';
-import 'settings.dart';
 
 enum AuthStatus { unknown, signedOut, signedIn }
 
@@ -148,7 +147,6 @@ class AuthController extends Notifier<AuthState> {
       }
     }
     await ref.read(tokenStoreProvider).clear();
-    await ref.read(deferredSetupProvider.notifier).clear();
     state = const AuthState.signedOut();
   }
 

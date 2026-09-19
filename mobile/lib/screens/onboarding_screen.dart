@@ -9,7 +9,6 @@ import '../core/theme.dart';
 import '../models/driver.dart';
 import '../providers/api.dart';
 import '../providers/auth.dart';
-import '../providers/settings.dart';
 import '../widgets/ui_kit.dart';
 
 const _documentTypes = <String, String>{
@@ -72,11 +71,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   ///
   /// The driver record was created at the first sign-in and is already in the
   /// panel's approval queue — this does not skip *registering*, only the rest
-  /// of the form. What it must not do is throw away what is on screen: a name
-  /// typed but never saved would leave the office an unnamed applicant and a
-  /// phone number, which is the one thing they cannot chase anybody with. So it
-  /// is sent first, and the office sees the incomplete record with a name on it.
-  Future<void> _finishLater() async {
+  /// of the form, which the account screen goes on asking for. What it must not
+  /// do is throw away what is on screen: a name typed but never saved would
+  /// leave the office an unnamed applicant and a phone number, which is the one
+  /// thing they cannot chase anybody with. So it is sent first.
+  Future<void> _leave() async {
     Buzz.tap();
     final driver = ref.read(currentDriverProvider);
     final typed = _name.text.trim();
@@ -86,10 +85,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         () => ref.read(authControllerProvider.notifier).updateProfile(name: typed),
       );
     }
-
-    final id = ref.read(currentDriverProvider)?.id;
-    if (id != null) await ref.read(deferredSetupProvider.notifier).deferFor(id);
-    if (mounted) context.go('/');
+    if (!mounted) return;
+    // Pushed from the account screen, or landed on directly from the very first
+    // sign-in. Either way there has to be a way out that does not depend on
+    // which.
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
   }
 
   Future<void> _pickPhoto() async {
@@ -304,27 +308,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: Space.lg),
           if (driver.onboardingComplete)
             FilledButton.icon(
-              onPressed: () {
-                Buzz.tap();
-                // Finished, so the next launch has no reason to open here.
-                ref.read(deferredSetupProvider.notifier).clear();
-                context.go('/');
-              },
-              icon: const Icon(Icons.arrow_forward, size: 19),
-              label: Text(driver.isApproved ? 'Go to my shift' : 'See where I stand'),
+              onPressed: _busy ? null : _leave,
+              icon: const Icon(Icons.check, size: 19),
+              label: const Text('Done'),
             )
           else ...<Widget>[
             OutlinedButton.icon(
-              onPressed: _busy ? null : _finishLater,
+              onPressed: _busy ? null : _leave,
               icon: const Icon(Icons.schedule, size: 18),
               label: const Text('Finish this later'),
             ),
             const SizedBox(height: Space.sm),
             Text(
-              'Your account is already registered with the office. They can see '
-              'it, and it stays in their approval queue with whatever you have '
-              'filled in — you can come back to the rest from your shift screen '
-              'at any time. Nothing is sent to you until it is approved.',
+              'Your account is already registered with the office and sits in '
+              'their queue with whatever you have filled in. The rest of this is '
+              'waiting for you under Account whenever you have it to hand.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall,
             ),

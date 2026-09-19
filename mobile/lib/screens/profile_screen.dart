@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/api_exception.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
+import '../models/driver.dart';
 import '../providers/auth.dart';
 import '../widgets/status_chip.dart';
 import '../widgets/theme_switch.dart';
@@ -128,6 +129,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
 
+          // Registration leads the screen while it is unfinished, because this
+          // is now the only place it is asked for: nothing redirects here, and
+          // an approved technician can work with it outstanding. Somebody who
+          // never opens this tab would otherwise never learn the office is
+          // still waiting on their insurance.
+          if (!driver.onboardingComplete) ...<Widget>[
+            const SizedBox(height: Space.xl),
+            const SectionHeader('Finish setting up'),
+            _SetupCard(driver: driver),
+          ],
+
           const SizedBox(height: Space.xl),
           const SectionHeader('Details'),
           SurfaceCard(
@@ -234,6 +246,132 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               side: BorderSide(color: palette.line),
             ),
             label: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the office is still missing, and the one button that fixes it.
+///
+/// Registration used to be a screen the app pushed you onto and would not let
+/// you off. It is a section of the account now: the record has been with the
+/// office since the first sign-in either way, and an approved technician takes
+/// work whether or not this is finished — so holding the whole app hostage to
+/// it bought nothing and cost a driver their first shift.
+///
+/// What it must not do is go quiet. Every outstanding item is named, in words
+/// rather than API slugs, with a progress bar that makes "nearly there"
+/// visible — because the one failure mode left is somebody assuming they have
+/// finished and waiting on an approval that is not coming.
+class _SetupCard extends StatelessWidget {
+  const _SetupCard({required this.driver});
+
+  final Driver driver;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+
+    final steps = <({String label, String detail, bool done})>[
+      (
+        label: 'Your name',
+        detail: driver.name.isEmpty ? 'Not given yet' : driver.name,
+        done: driver.name.isNotEmpty,
+      ),
+      (
+        label: 'Your van',
+        detail: driver.van?.title ?? 'No registration added yet',
+        done: driver.vehicles.isNotEmpty,
+      ),
+      (
+        label: 'Your documents',
+        detail: driver.missingDocuments.isEmpty
+            ? (driver.documentsInReview > 0
+                ? '${driver.documentsInReview} with the office for review'
+                : 'All in')
+            : 'Still needed: ${driver.missingDocuments.map(Driver.documentLabel).join(', ')}',
+        done: driver.missingDocuments.isEmpty,
+      ),
+    ];
+    final done = steps.where((step) => step.done).length;
+
+    return SurfaceCard(
+      accent: palette.warning,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '$done OF ${steps.length} DONE',
+                  style: palette.eyebrow,
+                ),
+              ),
+              Text(
+                driver.isApproved ? 'Not blocking your shift' : 'The office is waiting',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.sm),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(Radii.pill),
+            child: LinearProgressIndicator(
+              value: done / steps.length,
+              minHeight: 6,
+              color: palette.gold,
+            ),
+          ),
+
+          const SizedBox(height: Space.lg),
+          for (final step in steps)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Space.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    step.done ? Icons.check_circle : Icons.radio_button_unchecked,
+                    size: 19,
+                    color: step.done ? palette.success : palette.warning,
+                  ),
+                  const SizedBox(width: Space.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(step.label, style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 1),
+                        Text(step.detail, style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          Text(
+            driver.isApproved
+                ? 'You are approved and can go on shift now. The office would '
+                    'still like the rest of this when you have a moment.'
+                : 'Your account is registered with the office and in their queue '
+                    'already. They can approve it as it stands, and are more '
+                    'likely to once this is complete.',
+            style: theme.textTheme.bodySmall,
+          ),
+
+          const SizedBox(height: Space.lg),
+          FilledButton.icon(
+            onPressed: () {
+              Buzz.tap();
+              context.push('/onboarding');
+            },
+            icon: const Icon(Icons.arrow_forward, size: 19),
+            label: const Text('Finish setting up'),
           ),
         ],
       ),

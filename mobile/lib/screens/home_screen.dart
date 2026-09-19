@@ -205,13 +205,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, Space.xxxl),
           children: <Widget>[
-            // Until the office approves them, a technician has no shift, no
-            // offers and no board — every one of those endpoints refuses them.
-            // The whole screen is the standing, rather than the standing being
-            // a banner above three empty lists that look like a fault.
+            // One question on this screen: may this technician take work? That
+            // is the office's approval and nothing else — not whether the form
+            // is finished, which lives on the account screen and does not stop
+            // an approved driver going on shift.
             if (!driver.isApproved) ...<Widget>[
               const SizedBox(height: Space.sm),
-              _StandingPanel(
+              _ApprovalNotice(
                 driver: driver,
                 busy: _busy,
                 onCheckAgain: _checkStanding,
@@ -548,16 +548,16 @@ class _ShiftSwitchState extends State<_ShiftSwitch> with SingleTickerProviderSta
   }
 }
 
-/// What a technician who cannot yet take work is waiting for, and on whom.
+/// Why there is no shift switch on this screen yet.
 ///
-/// Registration (section 8.1) and the administrator's decision (8.2) are two
-/// separate waits, and conflating them is the whole problem this screen exists
-/// to fix. Somebody whose paperwork is in has nothing left to do and must be
-/// told so plainly; somebody with a document outstanding has to be sent back to
-/// onboarding. The screen therefore leads with whose move it is, then shows the
-/// three stages so the wait has a shape, and only then explains itself.
-class _StandingPanel extends StatelessWidget {
-  const _StandingPanel({
+/// The only thing that decides it is section 8.2's approval. A technician the
+/// office has approved goes on shift with an unfinished form and a van they
+/// have not registered; one it has not approved cannot, however complete their
+/// paperwork is. Those are two different waits and this screen owns exactly one
+/// of them — what is outstanding on the form is the account screen's business,
+/// and is mentioned here only as a pointer to it.
+class _ApprovalNotice extends StatelessWidget {
+  const _ApprovalNotice({
     required this.driver,
     required this.busy,
     required this.onCheckAgain,
@@ -572,44 +572,29 @@ class _StandingPanel extends StatelessWidget {
     final palette = context.palette;
     final theme = Theme.of(context);
 
-    final tone = driver.isRejected
-        ? palette.danger
-        : driver.isSuspended
-            ? palette.danger
-            : driver.awaitingReview
-                ? palette.info
-                : palette.warning;
-
-    final ours = !driver.awaitingReview && !driver.isRejected;
+    final tone = driver.isRejected || driver.isSuspended ? palette.danger : palette.warning;
 
     final (String title, String body, IconData icon) = switch (driver) {
       final d when d.isRejected => (
-          'Application not approved',
-          'The office has decided not to take this application forward. They can '
-              'tell you why, and whether anything can be done about it.',
+          'Not approved',
+          'The office has decided not to take this application forward, so no '
+              'work can be sent to you. They can tell you why.',
           Icons.do_not_disturb_on_outlined,
         ),
       final d when d.isSuspended => (
           'Account suspended',
-          'You will not be offered jobs while this stands. It is usually a '
-              'document that has run out — upload a current one and the office '
-              'will review it.',
+          'You cannot go on shift while this stands. It is usually a document '
+              'that has run out — upload a current one from your account and the '
+              'office will review it.',
           Icons.block,
         ),
-      final d when d.awaitingReview => (
-          'Waiting for approval',
-          'Everything we need from you is in. A manager at the office now checks '
-              'new technicians before any work is sent out, and that is the only '
-              'thing left. As soon as they approve you, offers and the open board '
-              'appear on this screen and you can start accepting shifts.',
-          Icons.hourglass_top,
-        ),
       _ => (
-          'Finish setting up',
-          'The office cannot approve you until the rest of your registration is '
-              'in. It takes a couple of minutes, and then your account goes to '
-              'them for approval.',
-          Icons.assignment_outlined,
+          'Not approved yet',
+          'The office has to approve your account before you can go on shift. '
+              'Yours is registered with them and is in their queue. The moment '
+              'they approve it the switch appears here and you can start taking '
+              'jobs — we will notify you, so there is nothing to sit and watch.',
+          Icons.hourglass_top,
         ),
     };
 
@@ -618,51 +603,28 @@ class _StandingPanel extends StatelessWidget {
       children: <Widget>[
         SurfaceCard(
           accent: tone,
-          wash: driver.awaitingReview,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  _StandingBadge(icon: icon, tone: tone, waiting: driver.awaitingReview),
+                  _WaitingBadge(icon: icon, tone: tone, waiting: driver.isPending),
                   const SizedBox(width: Space.lg),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(title, style: theme.textTheme.headlineSmall),
+                        Text('NO SHIFT AVAILABLE', style: palette.eyebrow),
                         const SizedBox(height: 2),
-                        Text(
-                          driver.isRejected
-                              ? 'CLOSED'
-                              : ours
-                                  ? 'OVER TO YOU'
-                                  : 'WITH THE OFFICE',
-                          style: palette.eyebrow,
-                        ),
+                        Text(title, style: theme.textTheme.headlineSmall),
                       ],
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: Space.lg),
-              ProgressRail(
-                stages: const <String>['Signed in', 'Your details', 'Office check', 'On shift'],
-                reached: driver.isRejected
-                    ? 1
-                    : driver.onboardingComplete
-                        ? 3
-                        : 2,
-                tone: tone,
-              ),
-
-              const SizedBox(height: Space.lg),
-              Text(
-                body,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-              ),
+              Text(body, style: theme.textTheme.bodyMedium?.copyWith(height: 1.5)),
 
               if (driver.verificationNote.isNotEmpty) ...<Widget>[
                 const SizedBox(height: Space.lg),
@@ -673,17 +635,8 @@ class _StandingPanel extends StatelessWidget {
                 ),
               ],
 
-              const SizedBox(height: Space.lg),
-              if (ours)
-                FilledButton.icon(
-                  onPressed: () {
-                    Buzz.tap();
-                    context.push('/onboarding');
-                  },
-                  icon: const Icon(Icons.arrow_forward, size: 19),
-                  label: Text(driver.isSuspended ? 'Upload a document' : 'Finish setting up'),
-                )
-              else
+              if (!driver.isRejected) ...<Widget>[
+                const SizedBox(height: Space.lg),
                 BusyButton(
                   label: 'Check again',
                   busy: busy,
@@ -691,73 +644,68 @@ class _StandingPanel extends StatelessWidget {
                   outlined: true,
                   onPressed: onCheckAgain,
                 ),
+              ],
             ],
           ),
         ),
 
-        // The receipt for what was handed over. A wait with nothing to show for
-        // it invites the same paperwork being uploaded a second time.
-        if (!driver.isRejected) ...<Widget>[
+        // A nudge, not a gate. Nothing here blocks the shift switch appearing —
+        // the office can approve an unfinished registration — but an approval
+        // is less likely to come while the office is still missing things, so
+        // it is worth saying once, on the screen they are waiting on.
+        if (!driver.onboardingComplete && !driver.isRejected) ...<Widget>[
           const SizedBox(height: Space.lg),
           SurfaceCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            onTap: () => _openAccount(context),
+            child: Row(
               children: <Widget>[
-                Text('WHAT THE OFFICE HAS', style: palette.eyebrow),
-                const SizedBox(height: Space.md),
-                _ChecklistRow(
-                  label: 'Your name',
-                  detail: driver.name.isEmpty ? 'Not given yet' : driver.name,
-                  done: driver.name.isNotEmpty,
+                Icon(Icons.assignment_outlined, size: 20, color: palette.inkSubtle),
+                const SizedBox(width: Space.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Your registration is not finished', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        'The office is still missing ${driver.outstanding.join(', ')}. '
+                        'Finish it on your account screen.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
-                _ChecklistRow(
-                  label: 'Your van',
-                  detail: driver.van?.title ?? 'No van registered yet',
-                  done: driver.vehicles.isNotEmpty,
-                ),
-                _ChecklistRow(
-                  label: 'Documents',
-                  detail: driver.missingDocuments.isNotEmpty
-                      ? 'Still needed: ${driver.missingDocuments.join(', ')}'
-                      : driver.documentsInReview > 0
-                          ? '${driver.documentsInReview} with the office for review'
-                          : '${driver.documents.length} uploaded',
-                  done: driver.missingDocuments.isEmpty,
-                ),
+                Icon(Icons.chevron_right, color: palette.inkSubtle),
               ],
             ),
           ),
         ],
-
-        const SizedBox(height: Space.lg),
-        Center(
-          child: Text(
-            driver.awaitingReview
-                ? 'You do not have to keep this open — we will notify you.'
-                : 'Your phone number is ${driver.phone}.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
       ],
     );
   }
+
+  /// The account tab, as a branch switch rather than a push, so it keeps the
+  /// bottom bar and lands where the rest of the setup already is.
+  void _openAccount(BuildContext context) {
+    Buzz.tap();
+    StatefulNavigationShell.of(context).goBranch(3);
+  }
 }
 
-/// The badge at the head of the standing card. It breathes while the wait is
-/// somebody else's, which is the difference between "in hand" and "stuck".
-class _StandingBadge extends StatefulWidget {
-  const _StandingBadge({required this.icon, required this.tone, required this.waiting});
+/// The badge at the head of the notice. It breathes while the wait is somebody
+/// else's, which is the difference between "in hand" and "stuck".
+class _WaitingBadge extends StatefulWidget {
+  const _WaitingBadge({required this.icon, required this.tone, required this.waiting});
 
   final IconData icon;
   final Color tone;
   final bool waiting;
 
   @override
-  State<_StandingBadge> createState() => _StandingBadgeState();
+  State<_WaitingBadge> createState() => _WaitingBadgeState();
 }
 
-class _StandingBadgeState extends State<_StandingBadge> with SingleTickerProviderStateMixin {
+class _WaitingBadgeState extends State<_WaitingBadge> with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2600),
@@ -770,7 +718,7 @@ class _StandingBadgeState extends State<_StandingBadge> with SingleTickerProvide
   }
 
   @override
-  void didUpdateWidget(_StandingBadge old) {
+  void didUpdateWidget(_WaitingBadge old) {
     super.didUpdateWidget(old);
     if (widget.waiting == old.waiting) return;
     widget.waiting ? _pulse.repeat() : _pulse.stop();
@@ -815,46 +763,6 @@ class _StandingBadgeState extends State<_StandingBadge> with SingleTickerProvide
               border: Border.all(color: widget.tone.withValues(alpha: 0.5), width: 2),
             ),
             child: Icon(widget.icon, size: 24, color: widget.tone),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChecklistRow extends StatelessWidget {
-  const _ChecklistRow({required this.label, required this.detail, required this.done});
-
-  final String label;
-  final String detail;
-  final bool done;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final theme = Theme.of(context);
-    final tone = done ? palette.success : palette.warning;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Space.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            done ? Icons.check_circle : Icons.radio_button_unchecked,
-            size: 19,
-            color: tone,
-          ),
-          const SizedBox(width: Space.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(label, style: theme.textTheme.titleMedium),
-                const SizedBox(height: 1),
-                Text(detail, style: theme.textTheme.bodySmall),
-              ],
-            ),
           ),
         ],
       ),

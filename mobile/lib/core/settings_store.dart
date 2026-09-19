@@ -16,7 +16,6 @@ class SettingsStore {
 
   static const _themeKey = 'st_theme_mode';
   static const _pinKey = 'st_manual_pin';
-  static const _deferredSetupKey = 'st_setup_deferred_for';
 
   /// Anything unreadable reads as "not chosen", which follows the system. The
   /// preference is never important enough to fail a launch over.
@@ -57,32 +56,6 @@ class SettingsStore {
       }
     } catch (_) {
       // As above: this launch still has the pin it was given.
-    }
-  }
-
-  /// The driver who chose to finish registering later, by id.
-  ///
-  /// An id rather than a flag, because a handset is not a person: a technician
-  /// who signs out and hands the phone to the next starter must not have their
-  /// "later" inherited by somebody who has registered nothing at all.
-  Future<int?> readDeferredSetup() async {
-    try {
-      return int.tryParse(await _storage.read(key: _deferredSetupKey) ?? '');
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> writeDeferredSetup(int? driverId) async {
-    try {
-      if (driverId == null) {
-        await _storage.delete(key: _deferredSetupKey);
-      } else {
-        await _storage.write(key: _deferredSetupKey, value: '$driverId');
-      }
-    } catch (_) {
-      // Worst case the next launch offers to set up again, which is a nudge
-      // rather than a wall — every screen the driver can reach is still there.
     }
   }
 
