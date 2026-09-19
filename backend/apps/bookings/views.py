@@ -15,7 +15,14 @@ from apps.billing.models import Invoice, ServiceItem
 from apps.billing.serializers import AddLineSerializer, InvoiceSerializer, PaymentSerializer
 from apps.billing.services import add_line, issue_invoice, mark_paid, remove_line
 from apps.configuration.hours import business_hours_status
-from apps.dispatch.engine import accept_offer, assign_manually, dispatch_job, reject_offer
+from apps.dispatch.engine import (
+    accept_offer,
+    assign_manually,
+    claim_job,
+    dispatch_job,
+    open_board,
+    reject_offer,
+)
 from apps.dispatch.models import DispatchOffer
 from apps.dispatch.serializers import (
     CandidatePreviewSerializer,
@@ -251,6 +258,25 @@ class DriverJobViewSet(viewsets.ReadOnlyModelViewSet):
         if offer is None:
             raise ValidationError({"detail": ["This job is no longer available to you."]})
         return offer.attempt.job
+
+    @extend_schema(responses={200: DriverJobSerializer(many=True)})
+    @action(detail=False, methods=["get"])
+    def available(self, request):
+        """The open board: every call-out still waiting, whoever it was offered to.
+
+        An offer expires and is gone; this list is not, so work nobody answered
+        in time stays somewhere a technician can find it.
+        """
+        return Response(DriverJobSerializer(open_board(request.user), many=True).data)
+
+    @extend_schema(request=None, responses={200: DriverJobSerializer})
+    @action(detail=True, methods=["post"])
+    def claim(self, request, pk=None):
+        """Take a job off the open board. First claim wins, exactly as an offer does."""
+        job = Job.objects.filter(pk=pk).first()
+        if job is None:
+            raise ValidationError({"detail": ["No such job."]})
+        return Response(DriverJobSerializer(claim_job(request.user, job)).data)
 
     @extend_schema(request=None, responses={200: DriverJobSerializer})
     @action(detail=True, methods=["post"])

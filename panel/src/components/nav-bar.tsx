@@ -39,7 +39,19 @@ const GROUPS: { heading: string; links: NavLink[] }[] = [
   },
   {
     heading: "System",
-    links: [{ href: "/settings", label: "Settings", icon: <IconSettings /> }],
+    links: [
+      { href: "/settings", label: "Settings", icon: <IconSettings /> },
+      /*
+       * Every surface in a browser tab, for testing the flow end to end without
+       * an emulator. Development only: the page links to localhost ports and
+       * offers signed-in-as-anybody builds, neither of which belongs on a
+       * deployed panel. NODE_ENV is inlined at build time, so a production
+       * bundle does not carry the link at all.
+       */
+      ...(process.env.NODE_ENV === "production"
+        ? []
+        : [{ href: "/apps", label: "Apps", icon: <IconApps /> }]),
+    ],
   },
 ];
 
@@ -399,6 +411,16 @@ function IconLookup() {
     <Svg>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.6-3.6" />
+    </Svg>
+  );
+}
+
+function IconApps() {
+  return (
+    <Svg>
+      <rect x="4" y="2.5" width="11" height="19" rx="2" />
+      <path d="M9.5 18.5h0" />
+      <path d="M18 7h2.5a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H18" />
     </Svg>
   );
 }

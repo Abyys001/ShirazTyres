@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate makemigrations seed test test-demo lint schema types shell psql websocket-check emulator waydroid
+.PHONY: up down logs migrate makemigrations seed test test-demo lint schema types shell psql websocket-check emulator waydroid web-apps
 
 # Boot the Pixel_Tyres emulator and run BOTH Flutter apps in debug mode
 # (hot reload enabled) inside tmux. Press r / R / q in each pane.
@@ -8,6 +8,11 @@ emulator:
 # Same, but against a running Waydroid container (see scripts/run_waydroid.sh).
 waydroid:
 	scripts/run_waydroid.sh
+
+# Build both Flutter apps for the web into panel/public/apps, so each one opens
+# in a browser tab from the panel's Apps page. No emulator, no handset.
+web-apps:
+	scripts/build_web_apps.sh
 
 up:
 	docker compose up -d --build

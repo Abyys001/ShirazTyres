@@ -106,7 +106,7 @@ class CustomerConsumer(ScopedConsumer):
 
 
 class DriverConsumer(ScopedConsumer):
-    """Offers, withdrawals and status changes for one driver."""
+    """Offers, withdrawals and status changes for one driver, plus the shared board."""
 
     scope_name = SCOPE_DRIVER
 
@@ -117,4 +117,4 @@ class DriverConsumer(ScopedConsumer):
         return Driver.objects.filter(pk=subject_id, is_active=True).exists()
 
     async def group_names(self, subject_id):
-        return [groups.driver_group(subject_id)]
+        return [groups.driver_group(subject_id), groups.DRIVERS]

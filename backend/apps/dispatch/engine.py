@@ -17,7 +17,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -202,6 +202,169 @@ def dispatch_job(job: Job, *, note: str = "") -> DispatchAttempt | None:
     return attempt
 
 
+def open_board(driver: Driver) -> list[Job]:
+    """Every call-out still waiting for somebody, for the technician's own board.
+
+    Dispatch offers a job to the best-ranked drivers and moves on when they do
+    not answer (6.5), which takes it off every screen it had reached and never
+    puts it back — a technician who was in a tyre bay for ninety seconds could
+    watch work appear and vanish with no way to ask for it. This is the standing
+    list underneath the rounds: dispatch still leads, and nothing falls off the
+    end of it while a customer is still waiting.
+
+    A driver who said no is not shown the job again; a driver who simply missed
+    the round is, because silence was never an answer.
+    """
+    rejected = DispatchOffer.objects.filter(
+        driver=driver, state=DispatchOffer.State.REJECTED
+    ).values_list("attempt__job_id", flat=True)
+
+    # A job being offered to this driver right now is already on their screen
+    # with a clock on it. It comes back to the board if the round passes them by.
+    offered = DispatchOffer.objects.filter(
+        driver=driver, state=DispatchOffer.State.OFFERED
+    ).values_list("attempt__job_id", flat=True)
+
+    queryset = (
+        Job.objects.filter(status__in=Job.OPEN_STATUSES, driver__isnull=True)
+        .exclude(pk__in=rejected)
+        .exclude(pk__in=offered)
+        .select_related("vehicle", "invoice")
+        .order_by("created_at")
+    )
+
+    # A driver with no areas set works everywhere; one with areas sees their own
+    # plus anything that fell outside every mapped area.
+    areas = list(driver.service_areas.values_list("pk", flat=True))
+    if areas:
+        queryset = queryset.filter(Q(service_area__isnull=True) | Q(service_area__in=areas))
+    return list(queryset)
+
+
+def claim_job(driver: Driver, job: Job) -> Job:
+    """A technician taking a job off the open board.
+
+    Dispatch decides who is *offered* work; this is the other direction, and it
+    ends in the same place — the job is awarded exactly as an accepted offer is,
+    so the audit trail, the withdrawals and the ETA are identical whichever way
+    a technician came to it.
+    """
+    from apps.realtime.publish import publish_offer_withdrawn
+
+    if not driver.is_active or not driver.is_approved:
+        raise ValidationError({"detail": ["Your account is not approved for dispatch."]})
+
+    withdrawn: list[int] = []
+
+    with transaction.atomic():
+        locked = Job.objects.select_for_update().get(pk=job.pk)
+        if locked.driver_id == driver.pk:
+            return locked
+        if locked.driver_id is not None or not locked.is_dispatchable:
+            raise ValidationError({"detail": ["Another driver has already taken this job."]})
+        if not has_capacity(driver):
+            raise ValidationError({"detail": ["Finish the job you are on before taking another."]})
+        if DispatchOffer.objects.filter(
+            attempt__job=locked, driver=driver, state=DispatchOffer.State.REJECTED
+        ).exists():
+            raise ValidationError({"detail": ["You turned this job down. Ask the office to reassign it."]})
+
+        offer = (
+            DispatchOffer.objects.select_for_update()
+            .filter(attempt__job=locked, driver=driver, state=DispatchOffer.State.OFFERED)
+            .order_by("-attempt__round_number")
+            .first()
+        ) or _claim_offer(locked, driver)
+
+        job, withdrawn = _award(locked, driver, offer)
+
+    for offer_id in withdrawn:
+        publish_offer_withdrawn(offer_id)
+
+    logger.info("dispatch.claimed reference=%s driver=%s", job.reference, driver.pk)
+    return job
+
+
+def _claim_offer(job: Job, driver: Driver) -> DispatchOffer:
+    """The round a claim writes down, so a self-served job is as auditable as an offered one."""
+    from apps.geo.routing import travel_time
+
+    now = timezone.now()
+    last_round = (
+        DispatchAttempt.objects.filter(job=job).aggregate(last=Max("round_number"))["last"] or 0
+    )
+    round_number = max(last_round, job.dispatch_rounds) + 1
+
+    route = None
+    if driver.coordinates and job.coordinates:
+        route = travel_time(driver.coordinates, job.coordinates)
+
+    DispatchAttempt.objects.filter(job=job, outcome=DispatchAttempt.Outcome.PENDING).update(
+        outcome=DispatchAttempt.Outcome.SUPERSEDED, resolved_at=now
+    )
+    attempt = DispatchAttempt.objects.create(
+        job=job,
+        round_number=round_number,
+        mode=_config(job)["mode"],
+        radius_km=Decimal("0"),
+        timeout_seconds=0,
+        service_area=job.service_area,
+        candidates_considered=1,
+        expires_at=now,
+        note="Claimed from the open board.",
+    )
+    job.dispatch_rounds = round_number
+    job.save(update_fields=["dispatch_rounds"])
+
+    return DispatchOffer.objects.create(
+        attempt=attempt,
+        driver=driver,
+        rank=1,
+        eta_seconds=route.duration_seconds if route else None,
+        distance_metres=route.distance_metres if route else None,
+    )
+
+
+def _award(job: Job, driver: Driver, offer: DispatchOffer) -> tuple[Job, list[int]]:
+    """Hand the job to the driver behind ``offer``. Caller holds the lock and the transaction."""
+    now = timezone.now()
+
+    offer.state = DispatchOffer.State.ACCEPTED
+    offer.responded_at = now
+    offer.save(update_fields=["state", "responded_at"])
+
+    # Every other live offer on this job, not just the winner's own round: a
+    # claim can land while an earlier round still has cards open on other
+    # phones, and a card nobody withdraws is a van that sets off for nothing.
+    losing = DispatchOffer.objects.filter(
+        attempt__job=job, state=DispatchOffer.State.OFFERED
+    ).exclude(pk=offer.pk)
+    withdrawn = list(losing.values_list("pk", flat=True))
+    losing.update(state=DispatchOffer.State.WITHDRAWN, responded_at=now)
+
+    DispatchAttempt.objects.filter(pk=offer.attempt_id).update(
+        outcome=DispatchAttempt.Outcome.ACCEPTED, resolved_at=now
+    )
+    DispatchAttempt.objects.filter(
+        job=job, outcome=DispatchAttempt.Outcome.PENDING
+    ).exclude(pk=offer.attempt_id).update(
+        outcome=DispatchAttempt.Outcome.SUPERSEDED, resolved_at=now
+    )
+
+    if job.status in {Job.Status.DISPATCHING, Job.Status.SUBMITTED, Job.Status.UNCLAIMED}:
+        transition_job(
+            job, Job.Status.ASSIGNED, set_driver=driver,
+            driver=driver, actor_type=JobStatusEvent.Actor.DRIVER,
+            note="Taken by the driver.",
+        )
+    job = transition_job(
+        job, Job.Status.ACCEPTED, driver=driver,
+        actor_type=JobStatusEvent.Actor.DRIVER, set_driver=driver,
+    )
+    set_eta(job, offer.eta_seconds, offer.distance_metres)
+    return job, withdrawn
+
+
 def accept_offer(driver: Driver, job: Job) -> Job:
     """First acceptance wins; the job is withdrawn from every other driver at once."""
     from apps.realtime.publish import publish_offer_withdrawn
@@ -221,37 +384,7 @@ def accept_offer(driver: Driver, job: Job) -> Job:
         if locked.driver_id not in (None, driver.pk):
             raise ValidationError({"detail": ["Another driver has already taken this job."]})
 
-        now = timezone.now()
-        offer.state = DispatchOffer.State.ACCEPTED
-        offer.responded_at = now
-        offer.save(update_fields=["state", "responded_at"])
-
-        siblings = DispatchOffer.objects.filter(
-            attempt=offer.attempt, state=DispatchOffer.State.OFFERED
-        ).exclude(pk=offer.pk)
-        withdrawn = list(siblings.values_list("pk", flat=True))
-        siblings.update(state=DispatchOffer.State.WITHDRAWN, responded_at=now)
-
-        DispatchAttempt.objects.filter(pk=offer.attempt_id).update(
-            outcome=DispatchAttempt.Outcome.ACCEPTED, resolved_at=now
-        )
-        DispatchAttempt.objects.filter(
-            job=locked, outcome=DispatchAttempt.Outcome.PENDING
-        ).exclude(pk=offer.attempt_id).update(
-            outcome=DispatchAttempt.Outcome.SUPERSEDED, resolved_at=now
-        )
-
-        if locked.status == Job.Status.DISPATCHING:
-            transition_job(
-                locked, Job.Status.ASSIGNED, set_driver=driver,
-                driver=driver, actor_type=JobStatusEvent.Actor.DRIVER,
-                note="Taken by the driver.",
-            )
-        job = transition_job(
-            locked, Job.Status.ACCEPTED, driver=driver,
-            actor_type=JobStatusEvent.Actor.DRIVER, set_driver=driver,
-        )
-        set_eta(job, offer.eta_seconds, offer.distance_metres)
+        job, withdrawn = _award(locked, driver, offer)
 
     for offer_id in withdrawn:
         publish_offer_withdrawn(offer_id)

@@ -136,6 +136,38 @@ def test_customer_cannot_cancel_once_the_limit_has_passed(
     assert response.status_code == 400
 
 
+def test_customer_can_cancel_until_the_work_is_paid_for(
+    customer_client, customer, make_job, driver, driver_client
+):
+    """The default boundary: a call-out is only settled once it is paid for."""
+    from apps.dispatch.engine import dispatch_job
+
+    job = make_job(customer=customer)
+    dispatch_job(job)
+    driver_client.post(f"/api/v1/driver/jobs/{job.pk}/accept")
+    for status in ("en_route", "arrived", "in_progress"):
+        driver_client.post(f"/api/v1/driver/jobs/{job.pk}/status", {"status": status}, format="json")
+        assert customer_client.get(f"/api/v1/my/jobs/{job.pk}").data["can_cancel"] is True
+
+    response = customer_client.post(f"/api/v1/my/jobs/{job.pk}/cancel", format="json")
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "cancelled"
+
+
+def test_customer_can_cancel_a_job_nobody_took(customer_client, customer, make_job, driver):
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+    from apps.configuration.services import set_setting
+
+    set_setting("dispatch.max_attempts", 1)
+    job = make_job(customer=customer)
+    expire_attempt_now(dispatch_job(job))
+    job.refresh_from_db()
+    assert job.status == "unclaimed"
+
+    response = customer_client.post(f"/api/v1/my/jobs/{job.pk}/cancel", format="json")
+    assert response.status_code == 200, response.data
+
+
 def test_staff_can_enter_a_phone_in_job(staff_client, service_area, job_payload):
     job_payload["source"] = "phone"
     response = staff_client.post("/api/v1/jobs", job_payload, format="json")

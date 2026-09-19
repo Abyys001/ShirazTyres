@@ -243,15 +243,27 @@ def correct_tyre_on_site(job: Job, size: str, *, driver: Driver, note: str = "")
 
 
 def customer_may_cancel(job: Job) -> bool:
+    """How far into the call-out the customer keeps the cancel button.
+
+    The default runs to ``in_progress``: a job is only settled once the technician
+    takes payment, and until then a customer who no longer needs us should be able
+    to say so from the app rather than by telephone. An unclaimed job is still the
+    customer's to drop — nobody is on their way.
+    """
     limit = get_setting("operational.customer_cancel_until")
     if limit == "never":
         return False
     order = [
-        Job.Status.SUBMITTED, Job.Status.DISPATCHING, Job.Status.ASSIGNED,
-        Job.Status.ACCEPTED, Job.Status.EN_ROUTE, Job.Status.ARRIVED,
+        Job.Status.SUBMITTED, Job.Status.DISPATCHING, Job.Status.UNCLAIMED, Job.Status.ASSIGNED,
+        Job.Status.ACCEPTED, Job.Status.EN_ROUTE, Job.Status.ARRIVED, Job.Status.IN_PROGRESS,
     ]
     if job.status not in order:
         return False
-    boundaries = {"accepted": Job.Status.ACCEPTED, "en_route": Job.Status.EN_ROUTE, "arrived": Job.Status.ARRIVED}
-    boundary = boundaries.get(limit, Job.Status.EN_ROUTE)
+    boundaries = {
+        "accepted": Job.Status.ACCEPTED,
+        "en_route": Job.Status.EN_ROUTE,
+        "arrived": Job.Status.ARRIVED,
+        "in_progress": Job.Status.IN_PROGRESS,
+    }
+    boundary = boundaries.get(limit, Job.Status.IN_PROGRESS)
     return order.index(job.status) <= order.index(boundary)

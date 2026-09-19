@@ -354,3 +354,134 @@ def test_per_area_overrides_beat_the_global_setting(make_job, driver, second_dri
     attempt = dispatch_job(make_job())
     assert attempt.mode == DispatchAttempt.Mode.SELECTION
     assert attempt.offers.count() == 2
+
+
+# ------------------------------------------------------------- open board ----
+
+
+def test_the_board_keeps_a_job_no_round_secured(make_job, driver, driver_client):
+    """Section 6.5 takes a timed-out job off the offer list. It must not vanish."""
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__max_attempts=1)
+    job = make_job()
+    attempt = dispatch_job(job)
+    expire_attempt_now(attempt)
+    job.refresh_from_db()
+
+    assert job.status == Job.Status.UNCLAIMED
+    assert driver_client.get("/api/v1/driver/offers").data == []
+
+    board = driver_client.get("/api/v1/driver/jobs/available")
+    assert board.status_code == 200, board.data
+    assert [row["reference"] for row in board.data] == [job.reference]
+
+
+def test_a_driver_claims_a_job_off_the_board(make_job, driver, driver_client):
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__max_attempts=1)
+    job = make_job()
+    expire_attempt_now(dispatch_job(job))
+
+    response = driver_client.post(f"/api/v1/driver/jobs/{job.pk}/claim")
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == Job.Status.ACCEPTED
+
+    job.refresh_from_db()
+    assert job.driver_id == driver.pk
+    assert job.eta_seconds is not None
+    # The claim is a round of its own, so the trail says how the job was taken.
+    claimed = job.dispatch_attempts.order_by("-round_number").first()
+    assert claimed.outcome == DispatchAttempt.Outcome.ACCEPTED
+    assert claimed.offers.get().state == DispatchOffer.State.ACCEPTED
+    assert driver_client.get("/api/v1/driver/jobs/available").data == []
+
+
+def test_only_the_first_claim_wins(make_job, driver, driver_client, second_driver_client):
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__max_attempts=1)
+    job = make_job()
+    expire_attempt_now(dispatch_job(job))
+
+    assert driver_client.post(f"/api/v1/driver/jobs/{job.pk}/claim").status_code == 200
+    second = second_driver_client.post(f"/api/v1/driver/jobs/{job.pk}/claim")
+    assert second.status_code == 400
+    assert "already taken" in second.data["detail"][0]
+
+
+def test_a_driver_who_rejected_a_job_is_not_shown_it_again(make_job, driver, driver_client):
+    from apps.dispatch.engine import dispatch_job
+
+    job = make_job()
+    dispatch_job(job)
+    driver_client.post(f"/api/v1/driver/jobs/{job.pk}/reject", {"reason": "Too far"}, format="json")
+
+    assert driver_client.get("/api/v1/driver/jobs/available").data == []
+    assert driver_client.post(f"/api/v1/driver/jobs/{job.pk}/claim").status_code == 400
+
+
+def test_a_driver_at_the_concurrency_cap_cannot_claim(make_job, driver, driver_client):
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__max_attempts=1)
+    held = make_job()
+    dispatch_job(held)
+    driver_client.post(f"/api/v1/driver/jobs/{held.pk}/accept")
+
+    spare = make_job()
+    expire_attempt_now(dispatch_job(spare))
+    response = driver_client.post(f"/api/v1/driver/jobs/{spare.pk}/claim")
+    assert response.status_code == 400
+    assert "Finish the job" in response.data["detail"][0]
+
+
+def test_the_board_leaves_out_work_that_already_has_a_driver(make_job, driver, driver_client,
+                                                            second_driver_client):
+    from apps.dispatch.engine import dispatch_job
+
+    _set(dispatch__mode="automatic")
+    job = make_job()
+    dispatch_job(job)
+    driver_client.post(f"/api/v1/driver/jobs/{job.pk}/accept")
+
+    assert second_driver_client.get("/api/v1/driver/jobs/available").data == []
+
+
+def test_a_job_being_offered_is_not_also_on_the_board(make_job, driver, driver_client):
+    """It is already on the screen with a clock on it; twice is one too many."""
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__max_attempts=1)
+    job = make_job()
+    attempt = dispatch_job(job)
+    assert driver_client.get("/api/v1/driver/offers").data != []
+    assert driver_client.get("/api/v1/driver/jobs/available").data == []
+
+    # Once the round passes them by it is back on the board, not lost.
+    expire_attempt_now(attempt)
+    assert [row["reference"] for row in
+            driver_client.get("/api/v1/driver/jobs/available").data] == [job.reference]
+
+
+def test_a_claim_withdraws_a_card_still_open_on_another_phone(
+    make_job, driver, second_driver, make_driver, driver_client, client_for_driver
+):
+    """The claimer was not in this round, so the round's own offers must still go."""
+    from apps.dispatch.engine import dispatch_job, expire_attempt_now
+
+    _set(dispatch__mode="selection", dispatch__offer_batch_size=1)
+    third = make_driver("+447700900299", "Tomasz Nowak", "51.5300", "-0.1600")
+    job = make_job()
+
+    # Round one reaches the nearest driver only; they let it run out, and the
+    # escalation puts round two out to somebody else.
+    expire_attempt_now(dispatch_job(job))
+    assert client_for_driver(second_driver).get("/api/v1/driver/offers").data != []
+
+    assert client_for_driver(third).post(f"/api/v1/driver/jobs/{job.pk}/claim").status_code == 200
+    assert client_for_driver(second_driver).get("/api/v1/driver/offers").data == []
+    assert DispatchOffer.objects.filter(
+        attempt__job=job, driver=second_driver
+    ).get().state == DispatchOffer.State.WITHDRAWN

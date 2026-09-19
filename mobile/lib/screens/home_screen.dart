@@ -12,6 +12,7 @@ import '../models/offer.dart';
 import '../providers/auth.dart';
 import '../providers/jobs.dart';
 import '../providers/location.dart';
+import '../widgets/board_card.dart';
 import '../widgets/map_view.dart';
 import '../widgets/message_view.dart';
 import '../widgets/offer_card.dart';
@@ -79,6 +80,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// Taking a job off the board. Somebody else may have taken it a second ago,
+  /// which is an ordinary answer rather than a failure — the API says so and the
+  /// list corrects itself.
+  Future<void> _claim(int jobId) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(availableJobsProvider.notifier).claim(jobId);
+    } on ApiException catch (error) {
+      _say(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _say(String message, {bool offerPin = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -108,6 +123,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final online = availability.valueOrNull ?? false;
     final switching = _busy || availability.isLoading;
     final offers = ref.watch(offersProvider);
+    final board = ref.watch(availableJobsProvider);
     final current = ref.watch(currentJobProvider);
     final pin = ref.watch(manualPositionProvider);
 
@@ -156,6 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onRefresh: () async {
           await ref.read(authControllerProvider.notifier).refreshDriver();
           await ref.read(offersProvider.notifier).refresh();
+          await ref.read(availableJobsProvider.notifier).refresh();
           ref.read(jobRevisionProvider.notifier).state++;
         },
         child: ListView(
@@ -202,22 +219,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             offers.when(
               data: (list) {
                 final live = list.where((offer) => offer.isLive).toList();
-                if (live.isEmpty) {
-                  if (current.valueOrNull != null || !driver.isApproved) {
-                    return const SizedBox.shrink();
-                  }
-                  return online
-                      ? const MessageView(
-                          title: 'Waiting for work',
-                          message: 'The nearest job comes to you first.',
-                          icon: Icons.hourglass_empty,
-                        )
-                      : const MessageView(
-                          title: 'You are offline',
-                          message: 'Go on shift to get offers.',
-                          icon: Icons.nightlight_outlined,
-                        );
-                }
+                if (live.isEmpty) return const SizedBox.shrink();
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -242,6 +244,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onRetry: () => ref.read(offersProvider.notifier).refresh(),
               ),
             ),
+
+            // Everything still waiting for somebody, offered or not. An offer
+            // expires and vanishes with the round; this list is where the work
+            // goes on sitting until a van takes it, so a shift is never staring
+            // at an empty screen while customers wait.
+            if (driver.isApproved)
+              board.when(
+                data: (list) {
+                  if (list.isEmpty) {
+                    if (current.valueOrNull != null) return const SizedBox.shrink();
+                    return online
+                        ? const MessageView(
+                            title: 'Nothing waiting',
+                            message: 'The nearest job comes to you first, and anything '
+                                'nobody has taken stays here.',
+                            icon: Icons.hourglass_empty,
+                          )
+                        : const MessageView(
+                            title: 'You are offline',
+                            message: 'Go on shift to get offers.',
+                            icon: Icons.nightlight_outlined,
+                          );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      SectionHeader(
+                        '${list.length} job${list.length == 1 ? '' : 's'} waiting',
+                      ),
+                      for (final job in list)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: Space.md),
+                          child: BoardCard(
+                            job: job,
+                            busy: _busy,
+                            onClaim: () => _claim(job.id),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+                loading: () => const LoadingBlock(),
+                error: (error, __) => MessageView(
+                  title: 'Could not load available jobs',
+                  message: '$error',
+                  onRetry: () => ref.read(availableJobsProvider.notifier).refresh(),
+                ),
+              ),
           ],
         ),
       ),

@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/secure_storage.dart';
 import '../core/settings_store.dart';
 
 final settingsStoreProvider = Provider<SettingsStore>(
-  (ref) => const SettingsStore(
-    FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true)),
-  ),
+  (ref) => const SettingsStore(appSecureStorage),
 );
 
 /// The light/dark choice, read back from the device on launch.

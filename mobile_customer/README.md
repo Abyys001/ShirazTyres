@@ -58,6 +58,22 @@ client id in the backend's `GOOGLE_OAUTH_CLIENT_IDS`; without it the button
 reports that Google sign-in is not configured in this build, and phone OTP still
 works.
 
+### In a browser
+
+```bash
+make web-apps     # from the repo root; builds this app and the other one
+```
+
+Both apps build for the web into `panel/public/apps/`, and the panel lists them
+on its **Apps** page with an Open button each. It is a testing and demo surface,
+not a distribution channel: a browser tab has no push notifications and no
+background location, and on a desktop no useful camera.
+
+Because the panel serves both builds from one origin, the secure store is
+namespaced per app in `lib/core/secure_storage.dart` — on the web it falls back
+to `localStorage`, where the default namespace would let whichever app signed in
+last hand its token to the other.
+
 ## Push notifications
 
 Behind `PushService` and shipping as a no-op, exactly as in the technician app —

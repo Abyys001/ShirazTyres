@@ -17,6 +17,19 @@ class JobApi {
     return list.map((item) => Offer.fromJson(asMap(item))).toList();
   }
 
+  /// The open board: every call-out still waiting for somebody, whoever it was
+  /// offered to. An offer expires; this does not, so work that went unanswered
+  /// stays somewhere a technician can find it.
+  Future<List<Job>> available() async {
+    final data = await _client.get('/driver/jobs/available');
+    final list = data is List ? data : (asMap(data)['results'] as List? ?? const []);
+    return list.map((item) => Job.fromJson(asMap(item))).toList();
+  }
+
+  /// Take a job off the board. First claim wins, exactly as an offer does.
+  Future<Job> claim(int id) async =>
+      Job.fromJson(asMap(await _client.post('/driver/jobs/$id/claim')));
+
   Future<Paginated<Job>> jobs({String? status}) async {
     final data = await _client.get(
       '/driver/jobs',

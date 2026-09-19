@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -72,7 +70,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final picked = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1200);
     if (picked == null) return;
     await _run(
-      () => ref.read(authControllerProvider.notifier).updateProfile(photo: File(picked.path)),
+      () => ref.read(authControllerProvider.notifier).updateProfile(photo: picked),
     );
   }
 
@@ -102,7 +100,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       () => ref.read(driverApiProvider).uploadDocument(
             documentType: type,
             expiryDate: expiry,
-            file: File(picked.path),
+            file: picked,
           ),
     );
   }

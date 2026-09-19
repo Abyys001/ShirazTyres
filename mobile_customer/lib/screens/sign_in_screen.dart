@@ -146,69 +146,63 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     return Scaffold(
       backgroundColor: palette.canvas,
       body: AuthBackdrop(
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(Space.xl, Space.xxl, Space.xl, Space.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const AuthHero(title: 'ShirazTyres', kicker: 'We come to the tyre.'),
-                const SizedBox(height: Space.xxxl),
+        child: AuthLayout(
+          children: <Widget>[
+            const AuthHero(title: 'ShirazTyres', kicker: 'We come to the tyre.'),
+            const SizedBox(height: Space.xxxl),
 
-                StepSwap(
-                  stepKey: _step,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _step == _Step.phone ? _phoneStep(theme) : _codeStep(theme),
-                  ),
-                ),
+            StepSwap(
+              stepKey: _step,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _step == _Step.phone ? _phoneStep(theme) : _codeStep(theme),
+              ),
+            ),
 
-                if (_error != null) ...<Widget>[
-                  const SizedBox(height: Space.lg),
-                  InlineNotice(_error!),
-                ],
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: Space.lg),
+              InlineNotice(_error!),
+            ],
 
-                const SizedBox(height: Space.xxxl),
-                const BeatStrip(
-                  beats: <(IconData, String)>[
-                    (Icons.pin_outlined, 'Your reg'),
-                    (Icons.local_shipping_outlined, 'We drive'),
-                    (Icons.check_circle_outline, 'Fitted'),
-                  ],
-                ),
-
-                const SizedBox(height: Space.xxl),
-                // Read from the API, so a customer created anywhere is on this
-                // list the moment they exist — and the mock Google token is
-                // offered only when the API says that route is actually open.
-                Builder(
-                  builder: (context) {
-                    final dev = ref.watch(devAccountsProvider).valueOrNull;
-                    final googleMock = dev?.googleMock ?? '';
-                    return DevSignInPanel(
-                      accounts: dev?.accounts ?? const <DevAccount>[],
-                      debugCode: _debugCode,
-                      onUse: (phone) {
-                        _phone.text = phone;
-                        _editNumber();
-                      },
-                      extra: googleMock.isEmpty
-                          ? null
-                          : OutlinedButton.icon(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _run(() => ref
-                                      .read(authControllerProvider.notifier)
-                                      .signInWithGoogle(googleMock)),
-                              icon: const Icon(Icons.bolt_outlined, size: 18),
-                              label: const Text('Mock Google sign-in'),
-                            ),
-                    );
-                  },
-                ),
+            const SizedBox(height: Space.xxxl),
+            const BeatStrip(
+              beats: <(IconData, String)>[
+                (Icons.pin_outlined, 'Your reg'),
+                (Icons.local_shipping_outlined, 'We drive'),
+                (Icons.check_circle_outline, 'Fitted'),
               ],
             ),
-          ),
+
+            const SizedBox(height: Space.xxl),
+            // Read from the API, so a customer created anywhere is on this
+            // list the moment they exist — and the mock Google token is
+            // offered only when the API says that route is actually open.
+            Builder(
+              builder: (context) {
+                final dev = ref.watch(devAccountsProvider).valueOrNull;
+                final googleMock = dev?.googleMock ?? '';
+                return DevSignInPanel(
+                  accounts: dev?.accounts ?? const <DevAccount>[],
+                  debugCode: _debugCode,
+                  onUse: (phone) {
+                    _phone.text = phone;
+                    _editNumber();
+                  },
+                  extra: googleMock.isEmpty
+                      ? null
+                      : OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _run(() => ref
+                                  .read(authControllerProvider.notifier)
+                                  .signInWithGoogle(googleMock)),
+                          icon: const Icon(Icons.bolt_outlined, size: 18),
+                          label: const Text('Mock Google sign-in'),
+                        ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );

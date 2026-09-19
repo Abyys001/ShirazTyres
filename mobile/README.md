@@ -60,6 +60,22 @@ While the backend runs with `SMS_PROVIDER=mock`, the OTP request response carrie
 a `debug_code` and the app pre-fills the code box, so you can sign in with no SMS
 gateway. `make seed` leaves four approved technicians and one pending one.
 
+### In a browser
+
+```bash
+make web-apps     # from the repo root; builds this app and the other one
+```
+
+Both apps build for the web into `panel/public/apps/`, and the panel lists them
+on its **Apps** page with an Open button each. It is a testing and demo surface,
+not a distribution channel: a browser tab has no push notifications and no
+background location, and on a desktop no useful camera.
+
+Because the panel serves both builds from one origin, the secure store is
+namespaced per app in `lib/core/secure_storage.dart` — on the web it falls back
+to `localStorage`, where the default namespace would let whichever app signed in
+last hand its token to the other.
+
 ## Location and battery
 
 Updates go on a **distance filter** (75 m by default), not a timer, with a

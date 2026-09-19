@@ -9,37 +9,39 @@ import '../models/offer.dart';
 import 'api.dart';
 import 'auth.dart';
 
-/// Live offers (specification 6). Rebuilt whenever the socket says something
-/// changed, and polled slowly as a backstop for a dropped connection.
-final offersProvider = AsyncNotifierProvider<OffersController, List<Offer>>(OffersController.new);
-
-class OffersController extends AsyncNotifier<List<Offer>> {
+/// The two lists a shift is built on, which keep themselves current the same
+/// way: rebuilt whenever the socket says something changed, and polled slowly as
+/// a backstop for a dropped connection.
+abstract class _LiveListController<T> extends AsyncNotifier<List<T>> {
   Timer? _poll;
   bool _gone = false;
 
+  /// Which events on the driver channel mean this list is out of date.
+  bool wants(String event);
+
+  Future<List<T>> fetch();
+
+  /// How hard to poll while the socket is up. Down, it is always ten seconds.
+  Duration get interval;
+
   @override
-  Future<List<Offer>> build() async {
+  Future<List<T>> build() async {
     _gone = false;
     final socket = ref.watch(driverSocketProvider);
     final subscription = socket.events.listen((event) {
-      final name = '${event['event']}';
-      if (name.startsWith('offer.') || name.startsWith('job.')) {
-        unawaited(refresh());
-      }
+      if (wants('${event['event']}')) unawaited(refresh());
     });
 
-    // The socket carries every offer; this is the backstop for a dropped
-    // connection, and it leans on the poll harder while the socket is down.
     final connection = socket.connection.listen((up) {
       _poll?.cancel();
       _poll = Timer.periodic(
-        up ? const Duration(seconds: 30) : const Duration(seconds: 10),
+        up ? interval : const Duration(seconds: 10),
         (_) => unawaited(refresh()),
       );
       if (up) unawaited(refresh());
     });
 
-    _poll = Timer.periodic(const Duration(seconds: 30), (_) => unawaited(refresh()));
+    _poll = Timer.periodic(interval, (_) => unawaited(refresh()));
     ref.onDispose(() {
       _gone = true;
       subscription.cancel();
@@ -47,17 +49,31 @@ class OffersController extends AsyncNotifier<List<Offer>> {
       _poll?.cancel();
     });
 
-    return ref.read(jobApiProvider).offers();
+    return fetch();
   }
 
   /// A refresh may correct the list; it must never replace a good one with an
   /// error because one poll could not reach the API mid-shift.
   Future<void> refresh() async {
-    final result = await AsyncValue.guard(() => ref.read(jobApiProvider).offers());
+    final result = await AsyncValue.guard(fetch);
     if (_gone) return;
     if (result.hasError && state.hasValue) return;
     state = result;
   }
+}
+
+/// Live offers (specification 6) — the work dispatch brought to this technician.
+final offersProvider = AsyncNotifierProvider<OffersController, List<Offer>>(OffersController.new);
+
+class OffersController extends _LiveListController<Offer> {
+  @override
+  Duration get interval => const Duration(seconds: 30);
+
+  @override
+  bool wants(String event) => event.startsWith('offer.') || event.startsWith('job.');
+
+  @override
+  Future<List<Offer>> fetch() => ref.read(jobApiProvider).offers();
 
   Future<void> accept(int jobId) async {
     await ref.read(jobApiProvider).accept(jobId);
@@ -69,6 +85,34 @@ class OffersController extends AsyncNotifier<List<Offer>> {
     await ref.read(jobApiProvider).reject(jobId, reason: reason);
     await refresh();
     ref.invalidate(currentJobProvider);
+  }
+}
+
+/// The open board — everything still waiting for somebody.
+///
+/// An offer is a question with a deadline: it disappears when the round moves on,
+/// and a technician who was under a car for ninety seconds watched the work
+/// vanish with no way to ask for it. This list does not expire. Dispatch still
+/// goes first; what nobody answered stays here until it is taken.
+final availableJobsProvider =
+    AsyncNotifierProvider<AvailableJobsController, List<Job>>(AvailableJobsController.new);
+
+class AvailableJobsController extends _LiveListController<Job> {
+  @override
+  Duration get interval => const Duration(seconds: 45);
+
+  @override
+  bool wants(String event) =>
+      event.startsWith('board.') || event.startsWith('offer.') || event.startsWith('job.');
+
+  @override
+  Future<List<Job>> fetch() => ref.read(jobApiProvider).available();
+
+  Future<void> claim(int jobId) async {
+    await ref.read(jobApiProvider).claim(jobId);
+    await refresh();
+    ref.invalidate(currentJobProvider);
+    ref.read(jobRevisionProvider.notifier).state++;
   }
 }
 

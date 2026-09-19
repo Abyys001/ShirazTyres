@@ -1,0 +1,72 @@
+#!/bin/bash
+# Build both Flutter apps for the web and drop them into the panel's static
+# files, so the office can open either app in a browser tab from the panel
+# itself — no emulator, no handset, no second server.
+#
+#   make web-apps          # or: scripts/build_web_apps.sh
+#
+# The panel serves `panel/public/` at its own origin, so the builds land at
+# /apps/driver/ and /apps/customer/ and need no CORS entry of their own beyond
+# the panel origin the API already trusts.
+#
+# This is a development and demo aid. A browser has no push notifications, no
+# background location and no camera on a desktop — the web build is for driving
+# the flow, not for shipping to a technician.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROOT/panel/public/apps"
+
+# ~/.zshrc pins PUB_HOSTED_URL at a mirror that is unreachable from here, and a
+# Flutter command inheriting it fails with a bare "Failed to update packages".
+export PUB_HOSTED_URL="${PUB_HOSTED_URL_OVERRIDE:-https://pub.dev}"
+export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL_OVERRIDE:-https://storage.googleapis.com}"
+
+# The browser talks to the published backend port, not the one inside compose.
+# Read from .env so moving BACKEND_HOST_PORT moves the builds with it.
+if [ -f "$ROOT/.env" ]; then
+  BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' "$ROOT/.env" | tail -1)"
+fi
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
+API_BASE_URL="${API_BASE_URL:-http://localhost:$BACKEND_HOST_PORT/api/v1}"
+WS_BASE_URL="${WS_BASE_URL:-ws://localhost:$BACKEND_HOST_PORT/ws}"
+
+# `flutter build web` is a release build, so `kDebugMode` is false and the
+# development sign-in panel — the seeded numbers and the mock OTP — would be
+# hidden. It is the whole point of the browser build, so it is asked for
+# explicitly. DEV_SIGN_IN=false turns it off for a demo.
+DEV_SIGN_IN="${DEV_SIGN_IN:-true}"
+
+build() {
+  local dir="$1" slug="$2" label="$3"
+  echo "==> $label → panel/public/apps/$slug"
+  rm -rf "${OUT:?}/$slug"
+  (
+    cd "$ROOT/$dir"
+
+    # Resolve from the cache first, and reach for the network only when it does
+    # not have what the pubspec asks for. pub.dev answers 403 from here often
+    # enough — it fetches a security advisory per package, and that is the call
+    # that gets refused — to sink a build whose dependencies have not changed
+    # since the last one. `--no-pub` below keeps the build itself from
+    # resolving a second time and undoing this.
+    flutter pub get --offline >/dev/null 2>&1 || flutter pub get
+
+    flutter build web \
+      --no-pub \
+      --release \
+      --base-href "/apps/$slug/" \
+      --dart-define=API_BASE_URL="$API_BASE_URL" \
+      --dart-define=WS_BASE_URL="$WS_BASE_URL" \
+      --dart-define=DEV_SIGN_IN="$DEV_SIGN_IN"
+  )
+  mkdir -p "$OUT"
+  cp -r "$ROOT/$dir/build/web" "$OUT/$slug"
+}
+
+build mobile          driver   "Technician app"
+build mobile_customer customer "Customer app"
+
+echo
+echo "Built against $API_BASE_URL"
+echo "Open them from the panel: http://localhost:$(sed -n 's/^PANEL_HOST_PORT=//p' "$ROOT/.env" 2>/dev/null | tail -1 || echo 3000)/apps"

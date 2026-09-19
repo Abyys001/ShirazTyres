@@ -274,7 +274,12 @@ class _JobScreenState extends ConsumerState<JobScreen> {
                     tone: palette.success,
                   ),
                 ),
+                // The button theme asks for a full-width minimum, which a Row
+                // cannot give: it hands its children unbounded width, and the
+                // infinite minimum then fails the whole subtree to lay out. Only
+                // the height floor is wanted next to the total.
                 OutlinedButton(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
                   onPressed: () {
                     Buzz.tap();
                     Navigator.of(context).push<void>(

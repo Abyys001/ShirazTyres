@@ -151,11 +151,12 @@ CATALOGUE: tuple[SettingSpec, ...] = (
                     {"value": "other", "label": "Something else"},
                 ],
                 "Issue types offered on the request form"),
-    SettingSpec("operational.customer_cancel_until", GROUP_OPERATIONAL, TYPE_CHOICE, "en_route",
+    SettingSpec("operational.customer_cancel_until", GROUP_OPERATIONAL, TYPE_CHOICE, "in_progress",
                 "Customers may cancel until", "",
                 (("accepted", "A driver accepts"),
                  ("en_route", "The driver is en route"),
                  ("arrived", "The driver arrives"),
+                 ("in_progress", "The work is paid for"),
                  ("never", "Never — staff only"))),
 )
 

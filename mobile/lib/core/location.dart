@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'config.dart';
@@ -107,7 +107,16 @@ Stream<Position> trackWhileOnline() {
 }
 
 LocationSettings _onlineSettings() {
-  if (Platform.isAndroid) {
+  // The web build has neither a foreground service nor a background-updates
+  // flag, and `AndroidSettings` would be handed to the browser implementation
+  // that cannot read it — so the plain settings below are the web's answer.
+  if (kIsWeb) {
+    return LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: AppConfig.locationFilterMetres,
+    );
+  }
+  if (defaultTargetPlatform == TargetPlatform.android) {
     return AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: AppConfig.locationFilterMetres,
@@ -120,7 +129,7 @@ LocationSettings _onlineSettings() {
       ),
     );
   }
-  if (Platform.isIOS) {
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
     return AppleSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: AppConfig.locationFilterMetres,

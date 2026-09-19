@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 
 /// Build-time configuration.
@@ -21,7 +19,14 @@ class AppConfig {
   static String get wsBaseUrl =>
       _wsBaseUrlOverride.isNotEmpty ? _wsBaseUrlOverride : 'ws://$_devHost:8000/ws';
 
-  static String get _devHost => Platform.isAndroid ? '10.0.2.2' : 'localhost';
+  /// `defaultTargetPlatform` rather than `dart:io`'s `Platform`, which does not
+  /// exist on the web. On the web it reports the host OS — an Android phone
+  /// browsing the build would claim 10.0.2.2, which is the emulator's loopback
+  /// and nothing to a browser — so `kIsWeb` is answered first.
+  static String get _devHost {
+    if (kIsWeb) return 'localhost';
+    return defaultTargetPlatform == TargetPlatform.android ? '10.0.2.2' : 'localhost';
+  }
 
   static const String officePhone = String.fromEnvironment(
     'OFFICE_PHONE',

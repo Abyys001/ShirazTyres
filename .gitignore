@@ -22,3 +22,8 @@ db.sqlite3
 **/android/local.properties
 **/.idea/
 *.iml
+
+# The Flutter web builds the panel serves at /apps/driver and /apps/customer.
+# Compiled output, rebuilt by `make web-apps` — the sources are mobile/ and
+# mobile_customer/, including their web/ shells, which are committed.
+panel/public/apps/

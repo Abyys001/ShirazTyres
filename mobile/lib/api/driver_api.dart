@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:cross_file/cross_file.dart';
 import 'package:dio/dio.dart';
 
 import '../core/api_client.dart';
@@ -20,11 +19,11 @@ class DriverApi {
   /// back by a cold start that has no signal.
   Future<Map<String, dynamic>> meRaw() async => asMap(await _client.get('/driver/me'));
 
-  Future<Driver> updateProfile({String? name, String? email, File? photo}) async {
+  Future<Driver> updateProfile({String? name, String? email, XFile? photo}) async {
     final form = FormData.fromMap(<String, dynamic>{
       if (name != null) 'name': name,
       if (email != null) 'email': email,
-      if (photo != null) 'photo': await MultipartFile.fromFile(photo.path),
+      if (photo != null) 'photo': await _part(photo),
     });
     return Driver.fromJson(asMap(await _client.patch('/driver/me', body: form)));
   }
@@ -65,15 +64,23 @@ class DriverApi {
   Future<DriverDocument> uploadDocument({
     required String documentType,
     required DateTime expiryDate,
-    required File file,
+    required XFile file,
   }) async {
     final form = FormData.fromMap(<String, dynamic>{
       'document_type': documentType,
       'expiry_date': expiryDate.toIso8601String().substring(0, 10),
-      'file': await MultipartFile.fromFile(file.path),
+      'file': await _part(file),
     });
     return DriverDocument.fromJson(asMap(await _client.post('/driver/documents', body: form)));
   }
+
+  /// An upload built from bytes rather than a path.
+  ///
+  /// `MultipartFile.fromFile` reads through `dart:io`, and on the web an
+  /// `XFile.path` is a blob URL with no file behind it. Reading the bytes works
+  /// on every target, and is what the picker already holds on the web anyway.
+  static Future<MultipartFile> _part(XFile file) async =>
+      MultipartFile.fromBytes(await file.readAsBytes(), filename: file.name);
 
   /// One fix, or a flushed buffer of them after a signal drop.
   Future<void> sendLocations(List<Map<String, dynamic>> points) async {

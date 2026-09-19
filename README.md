@@ -85,6 +85,31 @@ cd mobile          && flutter run -d emulator-5554   # technician app
 cd mobile_customer && flutter run -d emulator-5554   # customer app
 ```
 
+### Both apps in a browser tab
+
+An emulator is a five-minute detour when the question is only "does the offer
+land?". Both apps also build for the web, into the panel's own static files:
+
+```bash
+make web-apps    # scripts/build_web_apps.sh
+```
+
+The panel then lists every surface — technician app, customer app, customer
+website, booking widget — on **Apps**, each with an Open button and the numbers
+to sign in with. The builds are served same-origin by the panel, at
+<http://localhost:3010/apps/driver/index.html> and
+<http://localhost:3010/apps/customer/index.html>,
+and they talk to the same API as everything else. The development sign-in panel
+is on, because a release build would otherwise hide it (`DEV_SIGN_IN=false`
+turns it off for a demo).
+
+**It is a testing and demo surface, not a shipping target.** A browser tab has
+no push notifications and no background location, and on a desktop no useful
+camera — so offers arrive on the socket rather than as a notification, and the
+technician's position only moves while the tab is in front. Everything else —
+the whole call-out, live — works. The Apps entry is development-only and is not
+in a production panel bundle.
+
 ## Make targets
 
 | Target | Does |
@@ -94,6 +119,7 @@ cd mobile_customer && flutter run -d emulator-5554   # customer app
 | `make migrate` | apply migrations |
 | `make seed` | demo owner, office staff, service area, drivers, customers, jobs |
 | `make emulator` | boot Pixel_Tyres AVD + run both Flutter apps (debug, hot reload) |
+| `make web-apps` | build both Flutter apps for the web into the panel's **Apps** page |
 | `make test` | backend pytest suite in Docker |
 | `make test-local` | the same suite on SQLite, no Docker needed |
 | `make test-demo` | the whole call-out across all three surfaces, live, against the running stack |
@@ -122,6 +148,16 @@ Three rules shape the engine:
    and the owner is alerted. A job stuck with nobody waiting on it is the worst
    failure this system has, so a Celery beat sweep catches any timer lost to a
    worker restart.
+
+Underneath the rounds sits **the open board** — `GET /driver/jobs/available`, the
+first section of the technician app's shift screen. An offer is a question with a
+deadline and disappears when the round moves on; the board does not. Every
+call-out still waiting for somebody stays listed there, and a technician can take
+one with `POST /driver/jobs/{id}/claim`. A claim is awarded exactly as an
+accepted offer is — the round is written down, the other offers are withdrawn and
+the ETA is set — so the audit trail does not care which direction the work came
+from. A driver who rejected a job is not shown it again; one who merely missed
+the round is, because silence was never an answer.
 
 ## The two lookup APIs
 

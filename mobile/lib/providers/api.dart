@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/auth_api.dart';
 import '../api/dev_accounts_api.dart';
@@ -7,15 +6,10 @@ import '../api/device_api.dart';
 import '../api/driver_api.dart';
 import '../api/job_api.dart';
 import '../core/api_client.dart';
+import '../core/secure_storage.dart';
 import '../core/token_store.dart';
 
-final tokenStoreProvider = Provider<TokenStore>(
-  (ref) => TokenStore(
-    const FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    ),
-  ),
-);
+final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appSecureStorage));
 
 /// Bumped when a refresh fails. Deliberately depends on nothing: the auth
 /// controller listens to it, so the client can report a dead session without

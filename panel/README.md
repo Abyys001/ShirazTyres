@@ -14,6 +14,7 @@ Next.js 15 (App Router) + React 19 + TanStack Query + Tailwind + Leaflet.
 | `/invoices` | everything billed, and marking payment |
 | `/lookup` | the standalone plate lookup, independent of any job |
 | `/settings` | the whole configuration catalogue, plus the price list and service areas |
+| `/apps` | every surface in a browser tab — both Flutter web builds, the site, the widget (development only) |
 
 ## Tokens never reach the browser
 

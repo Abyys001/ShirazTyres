@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../core/api_exception.dart';
 import '../core/config.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../models/job.dart';
 import '../providers/jobs.dart';
+import '../widgets/cancel_call_out.dart';
 import '../widgets/message_view.dart';
 import '../widgets/status_chip.dart';
 import '../widgets/ui_kit.dart';
@@ -34,33 +34,10 @@ class JobScreen extends ConsumerStatefulWidget {
 class _JobScreenState extends ConsumerState<JobScreen> {
   bool _busy = false;
 
-  Future<void> _cancel() async {
-    Buzz.tap();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel this call-out?'),
-        content: const Text('We will stop looking for a technician.'),
-        actions: <Widget>[
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep it')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel it'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
+  Future<void> _cancel(CustomerJob job) async {
     setState(() => _busy = true);
     try {
-      await ref.read(cancelJobProvider)(widget.jobId, '');
-    } on ApiException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(error.message)));
-      }
+      await confirmAndCancel(context, ref, job);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -94,7 +71,7 @@ class _JobScreenState extends ConsumerState<JobScreen> {
         data: (data) => data.canCancel
             ? StickyBar(
                 child: OutlinedButton(
-                  onPressed: _busy ? null : _cancel,
+                  onPressed: _busy ? null : () => _cancel(data),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: palette.danger,
                     side: BorderSide(color: palette.line),

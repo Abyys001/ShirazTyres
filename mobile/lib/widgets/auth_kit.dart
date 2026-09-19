@@ -111,6 +111,41 @@ class _GlowPainter extends CustomPainter {
   bool shouldRepaint(_GlowPainter old) => old.t != t || old.palette != palette;
 }
 
+/// The body of a sign-in screen: centred when the content is shorter than the
+/// screen, and scrolling when it is not.
+///
+/// Both flows are short enough to leave the bottom third of a tall phone empty,
+/// which reads as a page that failed to finish loading rather than as one with
+/// room to breathe.
+class AuthLayout extends StatelessWidget {
+  const AuthLayout({required this.children, super.key});
+
+  final List<Widget> children;
+
+  static const _insets = EdgeInsets.fromLTRB(Space.xl, Space.xxl, Space.xl, Space.xl);
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: _insets,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, constraints.maxHeight - _insets.vertical),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: children,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Logo, name, and at most one short line, so the screen they land on is
 /// visibly the same brand as the tile they tapped.
 class AuthHero extends StatelessWidget {
@@ -126,7 +161,7 @@ class AuthHero extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const BrandLogo(height: 64),
+        const BrandLogo(height: 76),
         const SizedBox(height: Space.xl),
         Text(title, style: theme.textTheme.displayMedium),
         if (kicker.isNotEmpty) ...<Widget>[

@@ -8,6 +8,7 @@ import '../models/job.dart';
 import '../providers/auth.dart';
 import '../providers/jobs.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/cancel_call_out.dart';
 import '../widgets/status_chip.dart';
 import '../widgets/ui_kit.dart';
 
@@ -275,13 +276,13 @@ class _LastCallOut extends ConsumerWidget {
 
 /// A call-out in flight. The ETA is the largest thing on the phone, the rail
 /// under it says how far through we are, and one button opens the detail.
-class _LiveJob extends StatelessWidget {
+class _LiveJob extends ConsumerWidget {
   const _LiveJob({required this.job});
 
   final CustomerJob job;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final palette = context.palette;
     final theme = Theme.of(context);
     final tone = palette.status(job.status);
@@ -325,6 +326,18 @@ class _LiveJob extends StatelessWidget {
             icon: const Icon(Icons.visibility_outlined, size: 19),
             label: const Text('Track'),
           ),
+          // Changed their mind, or fixed it themselves. The way out belongs
+          // next to the job rather than a screen deeper: a customer who no
+          // longer needs us should not have to hunt for it, and a call-out
+          // nobody cancels is a technician sent to an empty road.
+          if (job.canCancel) ...<Widget>[
+            const SizedBox(height: Space.sm),
+            TextButton(
+              onPressed: () => confirmAndCancel(context, ref, job),
+              style: TextButton.styleFrom(foregroundColor: palette.danger),
+              child: const Text('Cancel this call-out'),
+            ),
+          ],
         ],
       ),
     );

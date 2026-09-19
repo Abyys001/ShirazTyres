@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:cross_file/cross_file.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -89,7 +89,7 @@ class _StubDriverApi implements DriverApi {
   Future<Driver> me() async => Driver.fromJson(_row);
 
   @override
-  Future<Driver> updateProfile({String? name, String? email, File? photo}) async =>
+  Future<Driver> updateProfile({String? name, String? email, XFile? photo}) async =>
       Driver.fromJson(_row);
 
   @override
@@ -111,7 +111,7 @@ class _StubDriverApi implements DriverApi {
   Future<DriverDocument> uploadDocument({
     required String documentType,
     required DateTime expiryDate,
-    required File file,
+    required XFile file,
   }) async =>
       throw UnimplementedError();
 

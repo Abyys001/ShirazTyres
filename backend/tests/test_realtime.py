@@ -230,3 +230,17 @@ def test_editing_the_price_list_tells_every_other_panel(listen, staff_client):
 
     events = [message["event"] for message in drain(groups.PANEL)]
     assert "config.service-items" in events
+
+
+def test_the_open_board_is_announced_to_every_technician(listen, make_job, driver, second_driver,
+                                                         driver_client):
+    """The board is shared, so it moves on every phone at once rather than on a poll."""
+    from apps.dispatch.engine import dispatch_job
+
+    drain = listen(groups.DRIVERS)
+    job = make_job()
+    assert [message["event"] for message in drain(groups.DRIVERS)] == ["board.open"]
+
+    dispatch_job(job)
+    driver_client.post(f"/api/v1/driver/jobs/{job.pk}/accept")
+    assert "board.taken" in [message["event"] for message in drain(groups.DRIVERS)]

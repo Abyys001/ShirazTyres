@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/auth_api.dart';
@@ -128,7 +128,7 @@ class AuthController extends Notifier<AuthState> {
     return session.isNew;
   }
 
-  Future<void> updateProfile({String? name, String? email, File? photo}) async {
+  Future<void> updateProfile({String? name, String? email, XFile? photo}) async {
     final driver = await ref.read(driverApiProvider).updateProfile(
           name: name,
           email: email,

@@ -41,10 +41,29 @@ def publish_driver_location(driver) -> None:
     )
 
 
+def publish_board_event(job, kind: str) -> None:
+    """The open board every technician shares — section 6's standing list.
+
+    A job leaving it matters as much as one arriving: two vans setting off for
+    the same call-out is how one of them wastes a journey. ``open`` carries the
+    job so a board can add it without a round trip; ``taken`` carries only the
+    id, because there is nothing left to show.
+    """
+    from apps.bookings.serializers import DriverJobSerializer
+
+    payload = {"event": f"board.{kind}", "job_id": job.pk}
+    if kind == "open":
+        payload["job"] = DriverJobSerializer(job).data
+    _send(groups.DRIVERS, payload)
+
+
 def publish_job_event(job, kind: str) -> None:
     from apps.bookings.serializers import CustomerJobSerializer, JobSerializer
 
     _send(groups.PANEL, {"event": f"job.{kind}", "job": JobSerializer(job).data})
+
+    # Every status change either puts the job on the open board or takes it off.
+    publish_board_event(job, "open" if job.is_dispatchable and job.driver_id is None else "taken")
 
     if job.customer_id and job.status in job.CUSTOMER_VISIBLE_STATUSES:
         _send(

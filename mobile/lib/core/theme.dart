@@ -375,6 +375,10 @@ ThemeData buildTheme(Brightness brightness) {
         color: palette.ink,
       ),
     ),
+    // Size.fromHeight is an infinite *minimum width*: these buttons fill
+    // whatever bounds them. Inside a Row, which hands its children unbounded
+    // width, that fails the whole subtree to lay out — override minimumSize
+    // there.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: palette.goldFill,

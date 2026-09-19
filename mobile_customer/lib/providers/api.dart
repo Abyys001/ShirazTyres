@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/auth_api.dart';
 import '../api/dev_accounts_api.dart';
@@ -8,25 +7,14 @@ import '../api/job_api.dart';
 import '../api/vehicle_api.dart';
 import '../core/api_client.dart';
 import '../core/job_cache.dart';
+import '../core/secure_storage.dart';
 import '../core/token_store.dart';
 
-final tokenStoreProvider = Provider<TokenStore>(
-  (ref) => TokenStore(
-    const FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    ),
-  ),
-);
+final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appSecureStorage));
 
 /// The last call-out this device saw, so a cold start with no signal still
 /// opens on it.
-final jobCacheProvider = Provider<JobCache>(
-  (ref) => const JobCache(
-    FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    ),
-  ),
-);
+final jobCacheProvider = Provider<JobCache>((ref) => const JobCache(appSecureStorage));
 
 /// Bumped when a refresh fails, so the auth controller can react without the
 /// client and the controller depending on each other.

@@ -113,6 +113,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenPair'
           description: ''
+  /api/v1/auth/dev/accounts:
+    get:
+      operationId: auth_dev_accounts_retrieve
+      description: |-
+        The seeded accounts a development build may sign in as.
+
+        The apps used to carry this list hard-coded (`mobile/lib/core/config.dart`),
+        which meant a driver created in the panel never appeared on the sign-in
+        screen and the listed numbers drifted from the database every time the seed
+        changed. Reading it from the database fixes both: what the panel creates is
+        immediately signable-in, and nothing is offered that does not exist.
+
+        **Three independent locks, because this lists real phone numbers.**
+
+        1. ``DEBUG`` must be on. A production image never serves it.
+        2. The request must not be over HTTPS — a debug build talking to a deployed
+           host is the case the apps' own ``devSignInEnabled`` already refuses, and
+           the server refuses it here too rather than trusting the client.
+        3. It returns phone numbers and names only. No tokens, no codes, no way in
+           that the ordinary OTP flow does not already provide.
+      tags:
+      - auth
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/auth/driver/otp/verify:
     post:
       operationId: auth_driver_otp_verify_create
@@ -238,6 +270,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/StaffUser'
           description: ''
+  /api/v1/auth/staff/password:
+    post:
+      operationId: auth_staff_password_create
+      description: Changing your own password. Any signed-in staff user may do this.
+      tags:
+      - staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+        required: true
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/auth/staff/refresh:
     post:
       operationId: auth_staff_refresh_create
@@ -263,6 +325,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/billing/stripe/webhook:
+    post:
+      operationId: billing_stripe_webhook_create
+      tags:
+      - billing
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/v1/customers:
     get:
@@ -794,6 +871,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/DriverJob'
           description: ''
+  /api/v1/driver/jobs/{id}/claim:
+    post:
+      operationId: driver_jobs_claim_create
+      description: Take a job off the open board. First claim wins, exactly as an
+        offer does.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this job.
+        required: true
+      tags:
+      - driver-jobs
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverJob'
+          description: ''
   /api/v1/driver/jobs/{id}/complete:
     post:
       operationId: driver_jobs_complete_create
@@ -1030,6 +1132,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/DriverJob'
           description: ''
+  /api/v1/driver/jobs/available:
+    get:
+      operationId: driver_jobs_available_list
+      description: |-
+        The open board: every call-out still waiting, whoever it was offered to.
+
+        An offer expires and is gone; this list is not, so work nobody answered
+        in time stays somewhere a technician can find it.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - driver-jobs
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDriverJobList'
+          description: ''
   /api/v1/driver/location:
     post:
       operationId: driver_location_create
@@ -1194,6 +1336,35 @@ paths:
                 items:
                   $ref: '#/components/schemas/ServiceItem'
           description: ''
+  /api/v1/driver/vehicle-lookup/{plate}:
+    get:
+      operationId: driver_vehicle_lookup_retrieve
+      description: |-
+        The section 9.3 plate tool, in the technician's hand.
+
+        Same cached lookup the panel uses — a fitter standing at a bonnet needs the
+        tyre size and what the car actually is, and the customer app's public
+        endpoint is throttled for anonymous callers rather than for someone doing
+        this twenty times a shift.
+      parameters:
+      - in: path
+        name: plate
+        schema:
+          type: string
+        required: true
+      tags:
+      - driver-app
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+          description: ''
   /api/v1/driver/vehicles:
     get:
       operationId: driver_vehicles_list
@@ -1335,6 +1506,30 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/driver/vehicles/{id}/refresh:
+    post:
+      operationId: driver_vehicles_refresh_create
+      description: Re-ask DVLA. Tax and MOT move without anybody touching the record.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this driver vehicle.
+        required: true
+      tags:
+      - driver-app
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverVehicle'
+          description: ''
   /api/v1/drivers:
     get:
       operationId: drivers_list
@@ -1782,9 +1977,39 @@ paths:
                 items:
                   $ref: '#/components/schemas/DriverMap'
           description: ''
+  /api/v1/health:
+    get:
+      operationId: health_retrieve
+      description: |-
+        Whether the system is actually working, rather than merely running.
+
+        Staff-only: the reply names the broker, the database vendor and every
+        configured provider, which is a map of the deployment and not something to
+        hand to an unauthenticated caller. A load balancer wanting a liveness probe
+        should hit a route that says nothing, not this one.
+      tags:
+      - audit
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/invoices:
     get:
       operationId: invoices_list
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
       parameters:
       - name: ordering
         required: false
@@ -1834,6 +2059,10 @@ paths:
           * `issued` - Issued
           * `paid` - Paid
           * `void` - Void
+      - in: query
+        name: stripe_mode
+        schema:
+          type: string
       tags:
       - billing
       security:
@@ -1847,9 +2076,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedInvoiceList'
           description: ''
+    post:
+      operationId: invoices_create
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      tags:
+      - billing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceCreate'
+          description: ''
   /api/v1/invoices/{id}:
     get:
       operationId: invoices_retrieve
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
       parameters:
       - in: path
         name: id
@@ -1870,9 +2137,152 @@ paths:
               schema:
                 $ref: '#/components/schemas/Invoice'
           description: ''
+    patch:
+      operationId: invoices_partial_update
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      tags:
+      - billing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoice'
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: ''
+    delete:
+      operationId: invoices_destroy
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      tags:
+      - billing
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/invoices/{id}/lines:
+    post:
+      operationId: invoices_lines_create
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      tags:
+      - billing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddLine'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddLine'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AddLine'
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: ''
+  /api/v1/invoices/{id}/lines/{line_id}:
+    delete:
+      operationId: invoices_lines_destroy
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      - in: path
+        name: line_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - billing
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: ''
   /api/v1/invoices/{id}/mark-paid:
     post:
       operationId: invoices_mark_paid_create
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
       parameters:
       - in: path
         name: id
@@ -1904,9 +2314,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/Invoice'
           description: ''
+  /api/v1/invoices/{id}/refund:
+    post:
+      operationId: invoices_refund_create
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      tags:
+      - billing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Refund'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Refund'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Refund'
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: ''
+  /api/v1/invoices/{id}/send-payment-link:
+    post:
+      operationId: invoices_send_payment_link_create
+      description: Section 7.1 step 5 — raise the Stripe page and text or email it
+        over.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this invoice.
+        required: true
+      tags:
+      - billing
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: ''
   /api/v1/invoices/{id}/void:
     post:
       operationId: invoices_void_create
+      description: |-
+        The office's invoices: raise, edit, issue, collect, void, refund.
+
+        A ModelViewSet now rather than read-only — an invoice can be raised for
+        something that is not a call-out, and the lines on a draft have to be
+        editable from the panel and not only from the driver's phone.
       parameters:
       - in: path
         name: id
@@ -2445,6 +2926,126 @@ paths:
               schema:
                 $ref: '#/components/schemas/JobDetail'
           description: ''
+  /api/v1/jobs/map:
+    get:
+      operationId: jobs_map_list
+      description: |-
+        Every live call-out that has a position, for the panel's map.
+
+        Unpositioned jobs are excluded rather than dropped at the far end: a job
+        with no coordinates cannot be drawn, and sending it only to have the
+        client filter it costs the same bytes on every driver ping. They are
+        still on the board — this endpoint feeds the map, not the queue.
+      parameters:
+      - in: query
+        name: assigned_staff
+        schema:
+          type: integer
+      - in: query
+        name: created_after
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: created_before
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: driver
+        schema:
+          type: integer
+      - in: query
+        name: issue_type
+        schema:
+          type: string
+      - in: query
+        name: needs_attention
+        schema:
+          type: boolean
+      - in: query
+        name: open_only
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: service_area
+        schema:
+          type: integer
+      - in: query
+        name: source
+        schema:
+          type: string
+          enum:
+          - app
+          - panel
+          - phone
+          - website
+        description: |-
+          * `website` - Customer website
+          * `app` - Customer app
+          * `panel` - Owner panel
+          * `phone` - Phone call
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - accepted
+            - arrived
+            - assigned
+            - cancelled
+            - completed
+            - dispatching
+            - en_route
+            - in_progress
+            - submitted
+            - unclaimed
+        description: |-
+          * `submitted` - Submitted
+          * `dispatching` - Dispatching
+          * `assigned` - Assigned
+          * `accepted` - Accepted
+          * `en_route` - En route
+          * `arrived` - Arrived
+          * `in_progress` - In progress
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+          * `unclaimed` - Unclaimed
+        explode: true
+        style: form
+      tags:
+      - jobs
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJobMapList'
+          description: ''
   /api/v1/jobs/stats:
     get:
       operationId: jobs_stats_retrieve
@@ -2462,6 +3063,124 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobStats'
+          description: ''
+  /api/v1/logs:
+    get:
+      operationId: logs_list
+      description: The operational log. Staff only — it carries phone numbers and
+        job detail.
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+          enum:
+          - auth
+          - billing
+          - dispatch
+          - driver
+          - email
+          - job
+          - push
+          - settings
+          - sms
+          - staff
+          - stripe
+          - system
+        description: |-
+          * `auth` - Sign-in and OTP
+          * `sms` - SMS
+          * `email` - Email
+          * `push` - Push notification
+          * `job` - Job
+          * `dispatch` - Dispatch
+          * `billing` - Billing
+          * `stripe` - Stripe
+          * `settings` - Settings
+          * `driver` - Driver
+          * `staff` - Staff
+          * `system` - System
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: severity
+        schema:
+          type: string
+          enum:
+          - debug
+          - error
+          - info
+          - warning
+        description: |-
+          * `debug` - Debug
+          * `info` - Info
+          * `warning` - Warning
+          * `error` - Error
+      - in: query
+        name: since
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: subject_id
+        schema:
+          type: string
+      - in: query
+        name: subject_type
+        schema:
+          type: string
+      - in: query
+        name: until
+        schema:
+          type: string
+          format: date-time
+      tags:
+      - audit
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditEventList'
+          description: ''
+  /api/v1/logs/summary:
+    get:
+      operationId: logs_summary_retrieve
+      description: Counts per category and severity, so the log page can show what
+        is in it.
+      tags:
+      - audit
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/v1/my-vehicles:
     get:
@@ -2934,6 +3653,11 @@ paths:
   /api/v1/service-areas:
     get:
       operationId: service_areas_list
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       parameters:
       - in: query
         name: is_active
@@ -2972,6 +3696,11 @@ paths:
           description: ''
     post:
       operationId: service_areas_create
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       tags:
       - service-areas
       requestBody:
@@ -3000,6 +3729,11 @@ paths:
   /api/v1/service-areas/{id}:
     get:
       operationId: service_areas_retrieve
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       parameters:
       - in: path
         name: id
@@ -3022,6 +3756,11 @@ paths:
           description: ''
     put:
       operationId: service_areas_update
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       parameters:
       - in: path
         name: id
@@ -3056,6 +3795,11 @@ paths:
           description: ''
     patch:
       operationId: service_areas_partial_update
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       parameters:
       - in: path
         name: id
@@ -3089,6 +3833,11 @@ paths:
           description: ''
     delete:
       operationId: service_areas_destroy
+      description: |-
+        Mix in ahead of the viewset base, and set :attr:`config_kind`.
+
+        A subclass that overrides ``perform_create`` and friends must call ``super()``
+        — as the service-area and staff viewsets do — or the announcement is skipped.
       parameters:
       - in: path
         name: id
@@ -3351,6 +4100,214 @@ paths:
               schema:
                 $ref: '#/components/schemas/SettingsDocument'
           description: ''
+  /api/v1/staff:
+    get:
+      operationId: staff_list
+      description: |-
+        Panel accounts, managed from the panel.
+
+        Creating staff was previously a `manage.py` command on a production box,
+        which meant in practice it did not happen and everybody shared the owner's
+        login. Restricted to owners and shop owners: the office works the board, it
+        does not decide who else can.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - staff
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStaffUserList'
+          description: ''
+    post:
+      operationId: staff_create
+      description: |-
+        Panel accounts, managed from the panel.
+
+        Creating staff was previously a `manage.py` command on a production box,
+        which meant in practice it did not happen and everybody shared the owner's
+        login. Restricted to owners and shop owners: the office works the board, it
+        does not decide who else can.
+      tags:
+      - staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffCreate'
+        required: true
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffCreate'
+          description: ''
+  /api/v1/staff/{id}:
+    get:
+      operationId: staff_retrieve
+      description: |-
+        Panel accounts, managed from the panel.
+
+        Creating staff was previously a `manage.py` command on a production box,
+        which meant in practice it did not happen and everybody shared the owner's
+        login. Restricted to owners and shop owners: the office works the board, it
+        does not decide who else can.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this staff user.
+        required: true
+      tags:
+      - staff
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffUser'
+          description: ''
+    patch:
+      operationId: staff_partial_update
+      description: |-
+        Panel accounts, managed from the panel.
+
+        Creating staff was previously a `manage.py` command on a production box,
+        which meant in practice it did not happen and everybody shared the owner's
+        login. Restricted to owners and shop owners: the office works the board, it
+        does not decide who else can.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this staff user.
+        required: true
+      tags:
+      - staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdate'
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffUpdate'
+          description: ''
+    delete:
+      operationId: staff_destroy
+      description: |-
+        Panel accounts, managed from the panel.
+
+        Creating staff was previously a `manage.py` command on a production box,
+        which meant in practice it did not happen and everybody shared the owner's
+        login. Restricted to owners and shop owners: the office works the board, it
+        does not decide who else can.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this staff user.
+        required: true
+      tags:
+      - staff
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/staff/{id}/set-password:
+    post:
+      operationId: staff_set_password_create
+      description: An administrator setting somebody else's password — the forgotten-password
+        path.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this staff user.
+        required: true
+      tags:
+      - staff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+        required: true
+      security:
+      - staffJWT: []
+      - customerJWT: []
+      - driverJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffUser'
+          description: ''
   /api/v1/vehicles:
     get:
       operationId: vehicles_list
@@ -3530,6 +4487,64 @@ components:
       required:
       - code
       - phone
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/CategoryEnum'
+          readOnly: true
+        category_display:
+          type: string
+          readOnly: true
+        severity:
+          allOf:
+          - $ref: '#/components/schemas/AuditEventSeverityEnum'
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        actor:
+          type: string
+          readOnly: true
+        subject_type:
+          type: string
+          readOnly: true
+        subject_id:
+          type: string
+          readOnly: true
+        payload:
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - actor
+      - category
+      - category_display
+      - created_at
+      - id
+      - message
+      - payload
+      - severity
+      - subject_id
+      - subject_type
+    AuditEventSeverityEnum:
+      enum:
+      - debug
+      - info
+      - warning
+      - error
+      type: string
+      description: |-
+        * `debug` - Debug
+        * `info` - Info
+        * `warning` - Warning
+        * `error` - Error
     BlankEnum:
       enum:
       - ''
@@ -3562,6 +4577,34 @@ components:
       - eta_seconds
       - name
       - phone
+    CategoryEnum:
+      enum:
+      - auth
+      - sms
+      - email
+      - push
+      - job
+      - dispatch
+      - billing
+      - stripe
+      - settings
+      - driver
+      - staff
+      - system
+      type: string
+      description: |-
+        * `auth` - Sign-in and OTP
+        * `sms` - SMS
+        * `email` - Email
+        * `push` - Push notification
+        * `job` - Job
+        * `dispatch` - Dispatch
+        * `billing` - Billing
+        * `stripe` - Stripe
+        * `settings` - Settings
+        * `driver` - Driver
+        * `staff` - Staff
+        * `system` - System
     ChannelEnum:
       enum:
       - sms
@@ -3723,6 +4766,14 @@ components:
           allOf:
           - $ref: '#/components/schemas/ConfirmationPathEnum'
           readOnly: true
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
+        damaged_summary:
+          type: string
+          readOnly: true
         location_text:
           type: string
           readOnly: true
@@ -3805,6 +4856,7 @@ components:
       - completed_at
       - created_at
       - customer_tyre_size
+      - damaged_summary
       - description
       - driver
       - en_route_at
@@ -3868,6 +4920,14 @@ components:
         tyre_confirmation_path:
           allOf:
           - $ref: '#/components/schemas/ConfirmationPathEnum'
+          readOnly: true
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
+        damaged_summary:
+          type: string
           readOnly: true
         location_text:
           type: string
@@ -3957,6 +5017,7 @@ components:
       - completed_at
       - created_at
       - customer_tyre_size
+      - damaged_summary
       - description
       - driver
       - en_route_at
@@ -4122,6 +5183,41 @@ components:
       - looked_up_tyre_size
       - plate
       - vehicle
+    DamagedTyre:
+      type: object
+      description: |-
+        One damaged wheel.
+
+        ``Job.damaged_positions`` is a JSONField, so the database will accept any
+        shape at all — this is the only thing standing between the technician and a
+        job that says the damage is at "front-left-ish". Every writer goes through
+        here.
+      properties:
+        position:
+          $ref: '#/components/schemas/PositionEnum'
+        severity:
+          default: ''
+          oneOf:
+          - $ref: '#/components/schemas/DamagedTyreSeverityEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        note:
+          type: string
+          default: ''
+          maxLength: 140
+      required:
+      - position
+    DamagedTyreSeverityEnum:
+      enum:
+      - flat
+      - deflating
+      - damaged
+      - blowout
+      type: string
+      description: |-
+        * `flat` - Completely flat
+        * `deflating` - Losing air
+        * `damaged` - Damaged but holding
+        * `blowout` - Blowout
     DeviceToken:
       type: object
       properties:
@@ -4484,6 +5580,14 @@ components:
         tyre_corrected_on_site:
           type: boolean
           readOnly: true
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
+        damaged_summary:
+          type: string
+          readOnly: true
         location_text:
           type: string
           readOnly: true
@@ -4567,6 +5671,7 @@ components:
       - contact_phone
       - created_at
       - customer_tyre_size
+      - damaged_summary
       - description
       - en_route_at
       - eta_minutes
@@ -4884,12 +5989,50 @@ components:
           maxLength: 32
         year_of_manufacture:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         is_primary:
           type: boolean
+        fuel_type:
+          type: string
+          readOnly: true
+        engine_capacity:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: cc
+        co2_emissions:
+          type: integer
+          readOnly: true
+          nullable: true
+        tax_status:
+          type: string
+          readOnly: true
+        tax_due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        mot_status:
+          type: string
+          readOnly: true
+        mot_expiry_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        mot_days_remaining:
+          type: integer
+          readOnly: true
+        tax_days_remaining:
+          type: integer
+          readOnly: true
+        dvla_fetched_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -4899,11 +6042,21 @@ components:
           format: date-time
           readOnly: true
       required:
+      - co2_emissions
       - created_at
       - description
       - display_plate
+      - dvla_fetched_at
+      - engine_capacity
+      - fuel_type
       - id
+      - mot_days_remaining
+      - mot_expiry_date
+      - mot_status
       - plate
+      - tax_days_remaining
+      - tax_due_date
+      - tax_status
       - updated_at
     GoogleSignIn:
       type: object
@@ -4918,12 +6071,36 @@ components:
         id:
           type: integer
           readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        display_reference:
+          type: string
+          readOnly: true
         job:
           type: integer
           readOnly: true
+          nullable: true
         job_reference:
           type: string
           readOnly: true
+          default: ''
+        customer:
+          type: integer
+          nullable: true
+        bill_to:
+          type: string
+          readOnly: true
+        bill_to_name:
+          type: string
+          maxLength: 120
+        bill_to_email:
+          type: string
+          format: email
+          maxLength: 254
+        bill_to_phone:
+          type: string
+          maxLength: 20
         status:
           allOf:
           - $ref: '#/components/schemas/InvoiceStatusEnum'
@@ -4940,6 +6117,10 @@ components:
           pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
           readOnly: true
           description: Percentage, snapshotted when the job was created.
+        due_date:
+          type: string
+          format: date
+          nullable: true
         subtotal:
           type: string
           format: decimal
@@ -4970,6 +6151,22 @@ components:
           items:
             $ref: '#/components/schemas/InvoiceLineItem'
           readOnly: true
+        stripe_invoice_id:
+          type: string
+          readOnly: true
+        hosted_invoice_url:
+          type: string
+          format: uri
+          readOnly: true
+        stripe_status:
+          type: string
+          readOnly: true
+        stripe_mode:
+          type: string
+          readOnly: true
+        is_payable_online:
+          type: boolean
+          readOnly: true
         issued_at:
           type: string
           format: date-time
@@ -4989,22 +6186,61 @@ components:
           format: date-time
           readOnly: true
       required:
+      - bill_to
       - created_at
       - currency
+      - display_reference
+      - hosted_invoice_url
       - id
       - is_editable
+      - is_payable_online
       - issued_at
       - job
       - job_reference
       - lines
       - paid_at
+      - reference
       - status
       - status_display
+      - stripe_invoice_id
+      - stripe_mode
+      - stripe_status
       - subtotal
       - total
       - updated_at
       - vat_amount
       - vat_rate
+    InvoiceCreate:
+      type: object
+      description: |-
+        Raise an invoice by hand, with or without a job behind it.
+
+        The office needs this for the things that are not call-outs — a fleet account
+        settled monthly, a counter sale, a re-issue after a dispute — which an
+        invoice welded to a job could not express.
+      properties:
+        job:
+          type: integer
+          nullable: true
+        customer:
+          type: integer
+          nullable: true
+        bill_to_name:
+          type: string
+          maxLength: 120
+        bill_to_email:
+          type: string
+          format: email
+          maxLength: 254
+        bill_to_phone:
+          type: string
+          maxLength: 20
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        notes:
+          type: string
     InvoiceLineItem:
       type: object
       properties:
@@ -5038,9 +6274,8 @@ components:
           description: Added by the system — the call-out fee. Not driver-editable.
         sort_order:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
+          maximum: 32767
+          minimum: -32768
       required:
       - description
       - id
@@ -5125,6 +6360,14 @@ components:
           type: boolean
           readOnly: true
         tyre_correction_note:
+          type: string
+          readOnly: true
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
+        damaged_summary:
           type: string
           readOnly: true
         location_text:
@@ -5280,6 +6523,7 @@ components:
       - created_at
       - customer
       - customer_tyre_size
+      - damaged_summary
       - description
       - disclaimer_accepted_at
       - dispatch_rounds
@@ -5357,14 +6601,18 @@ components:
           nullable: true
         location_accuracy_m:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 2147483647
           minimum: 0
-          format: int64
           nullable: true
         location_source:
           $ref: '#/components/schemas/LocationSourceEnum'
         tyre_confirmation:
           $ref: '#/components/schemas/TyreConfirmationInput'
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
       required:
       - contact_name
       - contact_phone
@@ -5435,6 +6683,14 @@ components:
           type: boolean
           readOnly: true
         tyre_correction_note:
+          type: string
+          readOnly: true
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
+        damaged_summary:
           type: string
           readOnly: true
         location_text:
@@ -5605,6 +6861,7 @@ components:
       - created_at
       - customer
       - customer_tyre_size
+      - damaged_summary
       - description
       - disclaimer_accepted_at
       - dispatch_attempts
@@ -5646,6 +6903,142 @@ components:
       - tyre_size
       - updated_at
       - vehicle
+    JobMap:
+      type: object
+      description: |-
+        One live call-out, as the panel's map and tracking strip need it.
+
+        Deliberately not ``JobSerializer``: the map redraws on every driver ping, and
+        shipping fifty-odd fields per job to move a pin is waste on a connection that
+        is already carrying location traffic. This is the tracking question in one
+        row — who is stranded, who is going, how far off are they.
+
+        The driver's position rides along because this is a staff surface. Section
+        4.6 keeps it off the customer's, and ``CustomerJobSerializer`` is what serves
+        them; nothing here is reachable without ``IsStaff``.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        plate:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/JobStatusEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        issue_type:
+          type: string
+          readOnly: true
+          description: A value from the configured issue list.
+        issue_label:
+          type: string
+          readOnly: true
+          description: Label at the time of submission.
+        location_text:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        driver:
+          type: integer
+          readOnly: true
+          nullable: true
+        driver_name:
+          type: string
+          readOnly: true
+          default: ''
+        driver_phone:
+          type: string
+          readOnly: true
+          default: ''
+        driver_latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+        driver_longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+        eta_minutes:
+          type: integer
+          readOnly: true
+        eta_seconds:
+          type: integer
+          readOnly: true
+          nullable: true
+        eta_distance_metres:
+          type: integer
+          readOnly: true
+          nullable: true
+        eta_updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        accepted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - accepted_at
+      - assigned_at
+      - contact_name
+      - contact_phone
+      - created_at
+      - driver
+      - driver_latitude
+      - driver_longitude
+      - driver_name
+      - driver_phone
+      - eta_distance_metres
+      - eta_minutes
+      - eta_seconds
+      - eta_updated_at
+      - id
+      - issue_label
+      - issue_type
+      - latitude
+      - location_text
+      - longitude
+      - plate
+      - reference
+      - status
+      - status_display
     JobStaffUpdate:
       type: object
       properties:
@@ -5684,6 +7077,11 @@ components:
           nullable: true
         internal_notes:
           type: string
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
       required:
       - contact_name
       - contact_phone
@@ -5794,6 +7192,11 @@ components:
         assigned_staff_id:
           type: integer
           nullable: true
+        force:
+          type: boolean
+          default: false
+          description: Move the job regardless of the section 5 lifecycle. Requires
+            a reason.
       required:
       - status
     KindEnum:
@@ -5960,6 +7363,29 @@ components:
       required:
       - code
       - phone
+    PaginatedAuditEventList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
     PaginatedCandidatePreviewList:
       type: object
       required:
@@ -6236,6 +7662,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Job'
+    PaginatedJobMapList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobMap'
     PaginatedNotificationList:
       type: object
       required:
@@ -6305,6 +7754,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServiceItem'
+    PaginatedStaffUserList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffUser'
     PaginatedVehicleList:
       type: object
       required:
@@ -6328,6 +7800,35 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Vehicle'
+    PasswordChange:
+      type: object
+      description: |-
+        Changing your own password. The current one is required — a borrowed
+        session must not be enough to lock the real owner out of the panel.
+      properties:
+        current_password:
+          type: string
+          writeOnly: true
+        new_password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          minLength: 8
+      required:
+      - current_password
+      - new_password
+    PasswordReset:
+      type: object
+      description: An administrator setting somebody else's password, without knowing
+        the old one.
+      properties:
+        new_password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          minLength: 8
+      required:
+      - new_password
     PatchedCustomer:
       type: object
       properties:
@@ -6702,12 +8203,170 @@ components:
           maxLength: 32
         year_of_manufacture:
           type: integer
-          maximum: 9223372036854775807
+          maximum: 32767
           minimum: 0
-          format: int64
           nullable: true
         is_primary:
           type: boolean
+        fuel_type:
+          type: string
+          readOnly: true
+        engine_capacity:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: cc
+        co2_emissions:
+          type: integer
+          readOnly: true
+          nullable: true
+        tax_status:
+          type: string
+          readOnly: true
+        tax_due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        mot_status:
+          type: string
+          readOnly: true
+        mot_expiry_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        mot_days_remaining:
+          type: integer
+          readOnly: true
+        tax_days_remaining:
+          type: integer
+          readOnly: true
+        dvla_fetched_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PatchedInvoice:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        display_reference:
+          type: string
+          readOnly: true
+        job:
+          type: integer
+          readOnly: true
+          nullable: true
+        job_reference:
+          type: string
+          readOnly: true
+          default: ''
+        customer:
+          type: integer
+          nullable: true
+        bill_to:
+          type: string
+          readOnly: true
+        bill_to_name:
+          type: string
+          maxLength: 120
+        bill_to_email:
+          type: string
+          format: email
+          maxLength: 254
+        bill_to_phone:
+          type: string
+          maxLength: 20
+        status:
+          allOf:
+          - $ref: '#/components/schemas/InvoiceStatusEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+          description: Percentage, snapshotted when the job was created.
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethodEnum'
+        payment_reference:
+          type: string
+          maxLength: 128
+        notes:
+          type: string
+        is_editable:
+          type: boolean
+          readOnly: true
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLineItem'
+          readOnly: true
+        stripe_invoice_id:
+          type: string
+          readOnly: true
+        hosted_invoice_url:
+          type: string
+          format: uri
+          readOnly: true
+        stripe_status:
+          type: string
+          readOnly: true
+        stripe_mode:
+          type: string
+          readOnly: true
+        is_payable_online:
+          type: boolean
+          readOnly: true
+        issued_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -6754,6 +8413,11 @@ components:
           nullable: true
         internal_notes:
           type: string
+        damaged_positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DamagedTyre'
+          maxItems: 5
     PatchedJobStatusUpdate:
       type: object
       properties:
@@ -6765,6 +8429,11 @@ components:
         assigned_staff_id:
           type: integer
           nullable: true
+        force:
+          type: boolean
+          default: false
+          description: Move the job regardless of the section 5 lifecycle. Requires
+            a reason.
     PatchedServiceArea:
       type: object
       properties:
@@ -6782,9 +8451,8 @@ components:
           type: boolean
         priority:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
+          maximum: 32767
+          minimum: -32768
           description: Higher wins where areas overlap.
         dispatch_overrides:
           description: Setting keys from the dispatch group that differ inside this
@@ -6829,15 +8497,28 @@ components:
           type: boolean
         sort_order:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
+          maximum: 32767
+          minimum: -32768
     PatchedSettingsUpdate:
       type: object
       properties:
         values:
           type: object
           additionalProperties: {}
+    PatchedStaffUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
     Payment:
       type: object
       properties:
@@ -6872,6 +8553,20 @@ components:
         * `android` - Android
         * `ios` - iOS
         * `web` - Web
+    PositionEnum:
+      enum:
+      - front_left
+      - front_right
+      - rear_left
+      - rear_right
+      - spare
+      type: string
+      description: |-
+        * `front_left` - Nearside front
+        * `front_right` - Offside front
+        * `rear_left` - Nearside rear
+        * `rear_right` - Offside rear
+        * `spare` - Spare
     ProviderEnum:
       enum:
       - google
@@ -6894,6 +8589,18 @@ components:
           type: string
       required:
       - refresh
+    Refund:
+      type: object
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          nullable: true
+          description: Leave empty to refund the whole invoice.
+        reason:
+          type: string
+          maxLength: 255
     Reject:
       type: object
       properties:
@@ -6903,11 +8610,13 @@ components:
     RoleEnum:
       enum:
       - owner
+      - shop_owner
       - staff
       type: string
       description: |-
         * `owner` - Owner
-        * `staff` - Staff
+        * `shop_owner` - Shop owner
+        * `staff` - Office
     ServiceArea:
       type: object
       properties:
@@ -6925,9 +8634,8 @@ components:
           type: boolean
         priority:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
+          maximum: 32767
+          minimum: -32768
           description: Higher wins where areas overlap.
         dispatch_overrides:
           description: Setting keys from the dispatch group that differ inside this
@@ -6980,9 +8688,8 @@ components:
           type: boolean
         sort_order:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
+          maximum: 32767
+          minimum: -32768
       required:
       - code
       - id
@@ -7071,6 +8778,39 @@ components:
         * `app` - Customer app
         * `panel` - Owner panel
         * `phone` - Phone call
+    StaffCreate:
+      type: object
+      description: |-
+        Create a panel account.
+
+        The password is write-only and validated through Django's own validators, so
+        the rules the project already configures apply here rather than a second set
+        invented for the panel.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          minLength: 8
+      required:
+      - email
+      - id
+      - name
+      - password
     StaffLogin:
       type: object
       properties:
@@ -7091,6 +8831,23 @@ components:
           maxLength: 32
       required:
       - tyre_size
+    StaffUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
+      required:
+      - email
+      - name
     StaffUser:
       type: object
       properties:

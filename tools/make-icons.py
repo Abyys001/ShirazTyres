@@ -1,70 +1,70 @@
-"""Renders the ShirazTyres mark to every launcher size both apps need.
+"""Renders the supplied ShirazTyres artwork to every launcher size both apps need.
 
-The geometry is the same 100-unit drawing as lib/widgets/brand_logo.dart, so the
-icon on the home screen and the badge inside the app are the same object.
+The two source files in docs/brand/source are the artwork as delivered: the mark
+on a white ground, no alpha. Everything here is derived from them, so the icons
+are regenerated rather than hand-cut, and re-running this after new artwork lands
+is the whole update.
+
+    python3 tools/make-icons.py
+
+The white ground is lifted off by un-compositing it rather than by keying it out,
+so an icon laid back on white is pixel-for-pixel the artwork — anti-aliased edges
+and all — while the alpha left behind is a true silhouette for themed icons.
 """
-import math, os, json, shutil
+import os
+import numpy as np
 from PIL import Image, ImageDraw
 
-SS = 8  # supersample
+SOURCE = "docs/brand/source"
 
-BLOCKS, TREAD_R, TREAD_W, GROOVE_W, GROOVE_SCALE = 18, 43.0, 9.5, 12.5, 0.84
-GROOVE = [
-    ((68, 33), (66, 24), (52, 21), (43, 26)),
-    ((43, 26), (32, 32), (32, 44), (44, 49)),
-    ((44, 49), (57, 55), (69, 57), (68, 68)),
-    ((68, 68), (67, 79), (51, 82), (38, 76)),
-]
 
-def bezier(p0, p1, p2, p3, n=48):
-    for i in range(n + 1):
-        t = i / n
-        u = 1 - t
-        yield (u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0],
-               u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1])
+def cutout(path):
+    """The artwork on transparency, trimmed to its own edges.
 
-def groove_points():
-    pts = []
-    for seg in GROOVE:
-        for p in bezier(*seg, n=90):
-            q = (50 + (p[0] - 50) * GROOVE_SCALE, 50 + (p[1] - 50) * GROOVE_SCALE)
-            if not pts or q != pts[-1]:
-                pts.append(q)
-    return pts
+    Every pixel was drawn over white, so `c = c'·a + 255·(1 - a)`. Taking the
+    darkest channel to be the one the artist drove to zero fixes `a`, and the
+    rest is that equation solved for `c'`.
+    """
+    rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
+    alpha = 255.0 - rgb.min(axis=2)
+    # The ground was scanned at 253, not 255, and a percent of opacity left
+    # everywhere would defeat the trim below.
+    alpha[alpha < 8] = 0
 
-def draw_mark(px, colour, box=100.0):
-    """The mark alone, on transparency, in a square of `px` pixels."""
-    n = px * SS
-    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    k = n / box
-    off = (box - 100) / 2  # centre the 100-unit drawing in a larger box
+    lit = alpha > 0
+    scale = np.where(lit, alpha, 1.0)[..., None]
+    colour = np.clip((rgb - (255.0 - alpha)[..., None]) * 255.0 / scale, 0, 255)
 
-    def T(p):
-        return ((p[0] + off) * k, (p[1] + off) * k)
+    art = Image.fromarray(
+        np.dstack([np.where(lit[..., None], colour, 0), alpha[..., None]]).astype(np.uint8),
+        "RGBA",
+    )
+    return art.crop(art.getbbox())
 
-    rim = [T((50 - TREAD_R, 50 - TREAD_R)), T((50 + TREAD_R, 50 + TREAD_R))]
-    step = 360 / BLOCKS
-    for i in range(BLOCKS):
-        a0 = i * step
-        d.arc([rim[0][0], rim[0][1], rim[1][0], rim[1][1]],
-              a0, a0 + step * 0.58, fill=colour, width=max(1, round(TREAD_W * k)))
 
-    # Stamped rather than stroked: PIL's joins leave hairlines on a curve this
-    # tight, and a dense run of discs is the same shape with round caps free.
-    r = GROOVE_W * k / 2
-    for x, y in (T(p) for p in groove_points()):
-        d.ellipse([x - r, y - r, x + r, y + r], fill=colour)
+def placed(art, canvas, width):
+    """`art` centred on a transparent square of `canvas` px, `width` px wide."""
+    scaled = art.resize((round(width), max(1, round(width * art.height / art.width))), Image.LANCZOS)
+    layer = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    layer.alpha_composite(scaled, ((canvas - scaled.width) // 2, (canvas - scaled.height) // 2))
+    return layer
 
-    return img.resize((px, px), Image.LANCZOS)
 
-def gradient(px, top, bottom):
-    img = Image.new("RGB", (px, px))
-    d = ImageDraw.Draw(img)
-    for y in range(px):
-        t = y / max(1, px - 1)
-        d.line([(0, y), (px, y)], fill=tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)))
-    return img.convert("RGBA")
+def in_safe_circle(art, diameter):
+    """The widest the artwork can be and still sit inside a circle of `diameter`.
+
+    An adaptive icon is only guaranteed to show the middle 66 of its 108dp, and
+    a launcher is free to mask that to a circle — a wide lockup fitted to the
+    square loses its ends the first time somebody's phone does. Measured against
+    the ink rather than the bounding box, because this mark's box corners are
+    empty and fitting those would leave the icon a third smaller than it needs
+    to be.
+    """
+    ink = np.asarray(art.getchannel("A")) > 16
+    ys, xs = np.nonzero(ink)
+    reach = np.hypot(xs - art.width / 2, ys - art.height / 2).max()
+    return art.width * (diameter / 2) / reach
+
 
 def rounded(img, radius_ratio):
     px = img.size[0]
@@ -74,45 +74,47 @@ def rounded(img, radius_ratio):
     img.putalpha(mask.resize((px, px), Image.LANCZOS))
     return img
 
-def compose(px, theme, *, mark_ratio, radius_ratio=None, opaque=False):
-    base = gradient(px, theme["field_top"], theme["field_bottom"])
+
+def on_field(art, px, colour, *, width_ratio, radius_ratio=None, opaque=False):
+    base = Image.new("RGBA", (px, px), colour)
     if radius_ratio is not None:
         base = rounded(base, radius_ratio)
-    m = round(px * mark_ratio)
-    base.alpha_composite(draw_mark(m, theme["mark"]), ((px - m) // 2, (px - m) // 2))
+    base.alpha_composite(placed(art, px, px * width_ratio))
     return base.convert("RGB") if opaque else base
 
-THEMES = {
-    "mobile_customer": {  # the motorist's app wears the light treatment
-        "field_top": (255, 215, 0), "field_bottom": (251, 191, 36),
-        "mark": (11, 19, 21, 255), "background": "#FFD700",
-    },
-    "mobile": {           # the technician's is its negative
-        "field_top": (22, 35, 39), "field_bottom": (11, 19, 21),
-        "mark": (255, 215, 0, 255), "background": "#0B1315",
-    },
-}
+
+# The artwork carries its own colour, so both apps stand on the white ground it
+# was drawn on; the technician's tyre is blue where the customer's is gold, and
+# that is what tells the two apart on a phone with both installed.
+FIELD = (255, 255, 255, 255)
+BACKGROUND = "#FFFFFF"
+
+APPS = {"mobile": "technician", "mobile_customer": "customer"}
 
 ANDROID = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
 IOS = [("20x20", 1), ("20x20", 2), ("20x20", 3), ("29x29", 1), ("29x29", 2), ("29x29", 3),
        ("40x40", 1), ("40x40", 2), ("40x40", 3), ("60x60", 2), ("60x60", 3),
        ("76x76", 1), ("76x76", 2), ("83.5x83.5", 2), ("1024x1024", 1)]
 
-for app, theme in THEMES.items():
+for app, label in APPS.items():
+    art = cutout(f"{SOURCE}/{app}.png")
+
     res = f"{app}/android/app/src/main/res"
     for density, scale in ANDROID.items():
         os.makedirs(f"{res}/mipmap-{density}", exist_ok=True)
         legacy = round(48 * scale)
-        compose(legacy, theme, mark_ratio=0.60, radius_ratio=0.22).save(
+        on_field(art, legacy, FIELD, width_ratio=0.80, radius_ratio=0.22).save(
             f"{res}/mipmap-{density}/ic_launcher.png")
-        # Adaptive: 108dp canvas, art inside the 66dp safe circle.
+
+        # Adaptive: a 108dp canvas the launcher masks down to 66dp.
         fg = round(108 * scale)
-        layer = Image.new("RGBA", (fg, fg), (0, 0, 0, 0))
-        m = round(fg * 0.52)
-        layer.alpha_composite(draw_mark(m, theme["mark"]), ((fg - m) // 2, (fg - m) // 2))
-        layer.save(f"{res}/mipmap-{density}/ic_launcher_foreground.png")
-        mono = Image.new("RGBA", (fg, fg), (0, 0, 0, 0))
-        mono.alpha_composite(draw_mark(m, (255, 255, 255, 255)), ((fg - m) // 2, (fg - m) // 2))
+        width = in_safe_circle(art, 66 * scale)
+        placed(art, fg, width).save(f"{res}/mipmap-{density}/ic_launcher_foreground.png")
+
+        # A themed icon is tinted from the alpha alone, so all it needs is the
+        # silhouette — spoke gaps and all.
+        mono = Image.new("RGBA", (fg, fg), (255, 255, 255, 0))
+        mono.putalpha(placed(art, fg, width).getchannel("A"))
         mono.save(f"{res}/mipmap-{density}/ic_launcher_monochrome.png")
 
     os.makedirs(f"{res}/mipmap-anydpi-v26", exist_ok=True)
@@ -128,17 +130,17 @@ for app, theme in THEMES.items():
         open(f"{res}/mipmap-anydpi-v26/{name}", "w").write(adaptive)
     open(f"{res}/values/ic_launcher_background.xml", "w").write(
         '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-        f'    <color name="ic_launcher_background">{theme["background"]}</color>\n</resources>\n')
+        f'    <color name="ic_launcher_background">{BACKGROUND}</color>\n</resources>\n')
 
+    # iOS applies its own mask and refuses an icon with alpha in it.
     ios = f"{app}/ios/Runner/Assets.xcassets/AppIcon.appiconset"
     for base, scale in IOS:
         side = round(float(base.split("x")[0]) * scale)
-        suffix = f"@{scale}x"
-        compose(side, theme, mark_ratio=0.62, opaque=True).save(
-            f"{ios}/Icon-App-{base}{suffix}.png")
+        on_field(art, side, FIELD, width_ratio=0.80, opaque=True).save(
+            f"{ios}/Icon-App-{base}@{scale}x.png")
 
-    # A big flat lockup for the splash and anywhere the app shows itself off.
+    # A big flat one for the docs and anywhere the app shows itself off.
     os.makedirs("docs/brand", exist_ok=True)
-    compose(512, theme, mark_ratio=0.60, radius_ratio=0.22).save(
-        "docs/brand/" + ("driver" if app == "mobile_customer" else "technician") + "-icon.png")
+    on_field(art, 512, FIELD, width_ratio=0.80, radius_ratio=0.22).save(
+        f"docs/brand/{label}-icon.png")
     print(app, "icons written")

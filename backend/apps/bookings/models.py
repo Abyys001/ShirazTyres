@@ -64,7 +64,9 @@ class Job(models.Model):
 
     TERMINAL_STATUSES = frozenset({Status.COMPLETED, Status.CANCELLED})
 
-
+    #: Waiting for somebody: dispatch may still offer these, and the technicians'
+    #: open board lists them until one is taken.
+    OPEN_STATUSES = frozenset({Status.SUBMITTED, Status.DISPATCHING, Status.UNCLAIMED})
 
     #: Statuses in which a driver counts against the concurrency cap.
     DRIVER_BUSY_STATUSES = frozenset(
@@ -200,7 +202,7 @@ class Job(models.Model):
 
     @property
     def is_dispatchable(self) -> bool:
-        return self.status in {self.Status.SUBMITTED, self.Status.DISPATCHING, self.Status.UNCLAIMED}
+        return self.status in self.OPEN_STATUSES
 
     @property
     def plate(self) -> str:

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:cross_file/cross_file.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -92,7 +92,7 @@ class _FailingDriverApi implements DriverApi {
   Future<Driver> setOnline(bool online) async => throw failure;
 
   @override
-  Future<Driver> updateProfile({String? name, String? email, File? photo}) async => throw failure;
+  Future<Driver> updateProfile({String? name, String? email, XFile? photo}) async => throw failure;
 
   @override
   Future<DriverVehicle> addVehicle(String plate) async => throw failure;
@@ -113,7 +113,7 @@ class _FailingDriverApi implements DriverApi {
   Future<DriverDocument> uploadDocument({
     required String documentType,
     required DateTime expiryDate,
-    required File file,
+    required XFile file,
   }) async =>
       throw failure;
 
