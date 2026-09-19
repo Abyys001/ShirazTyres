@@ -88,6 +88,16 @@ docker compose up -d --build panel website
 scripts/build_web_apps.sh      # the Flutter web builds bake the API URL in too
 ```
 
+## Port 80 does not redirect
+
+Both ports serve the panel. That is deliberate while the certificate is
+self-signed: a browser meets a full-page warning on 443, and anything with
+HTTPS-only mode turned on will not offer a way past it — so a redirect from 80
+would leave the only route in one the client is entitled to refuse. `http://` is
+the route that always works; `https://` is the one the apps are built against.
+
+Turn 80 back into a redirect as soon as a real certificate replaces this one.
+
 ## Hardening still to do
 
 The raw ports (`3100`, `3101`, `8100`) are still published, deliberately: they
