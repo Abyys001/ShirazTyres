@@ -228,5 +228,7 @@ docs/              API surface, data model, deployment
 - [`docs/data-model.md`](docs/data-model.md) — entities, the status machine, dispatch
 - [`docs/design-tokens.md`](docs/design-tokens.md) — the palette, type and the shared UI kit
 - [`docs/dev-logins.md`](docs/dev-logins.md) — every development credential, in one place
+- [`deploy/README.md`](deploy/README.md) — nginx in front, TLS, and why a
+  non-standard port is what makes a panel sit on "Loading"
 - [`docs/deployment.md`](docs/deployment.md) — going live, real providers, GDPR
 - [`Project_view.md`](Project_view.md) — the version 2.0 specification this implements
