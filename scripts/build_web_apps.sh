@@ -22,14 +22,22 @@ OUT="$ROOT/panel/public/apps"
 export PUB_HOSTED_URL="${PUB_HOSTED_URL_OVERRIDE:-https://pub.dev}"
 export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL_OVERRIDE:-https://storage.googleapis.com}"
 
-# The browser talks to the published backend port, not the one inside compose.
-# Read from .env so moving BACKEND_HOST_PORT moves the builds with it.
+# These are baked into the build, so they have to be the address the *browser*
+# will use — not the compose-internal one, and not localhost unless the stack is
+# only ever opened on the machine it runs on.
+#
+# NEXT_PUBLIC_API_BASE_URL and NEXT_PUBLIC_WS_BASE_URL in .env already hold
+# exactly that, because the panel and the website hand them to their own
+# browsers. Following them means a stack published on a server builds apps that
+# reach that server, rather than apps that reach whoever opens them.
 if [ -f "$ROOT/.env" ]; then
   BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' "$ROOT/.env" | tail -1)"
+  ENV_API_BASE_URL="$(sed -n 's/^NEXT_PUBLIC_API_BASE_URL=//p' "$ROOT/.env" | tail -1)"
+  ENV_WS_BASE_URL="$(sed -n 's/^NEXT_PUBLIC_WS_BASE_URL=//p' "$ROOT/.env" | tail -1)"
 fi
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
-API_BASE_URL="${API_BASE_URL:-http://localhost:$BACKEND_HOST_PORT/api/v1}"
-WS_BASE_URL="${WS_BASE_URL:-ws://localhost:$BACKEND_HOST_PORT/ws}"
+API_BASE_URL="${API_BASE_URL:-${ENV_API_BASE_URL:-http://localhost:$BACKEND_HOST_PORT/api/v1}}"
+WS_BASE_URL="${WS_BASE_URL:-${ENV_WS_BASE_URL:-ws://localhost:$BACKEND_HOST_PORT/ws}}"
 
 # `flutter build web` is a release build, so `kDebugMode` is false and the
 # development sign-in panel — the seeded numbers and the mock OTP — would be
@@ -69,4 +77,4 @@ build mobile_customer customer "Customer app"
 
 echo
 echo "Built against $API_BASE_URL"
-echo "Open them from the panel: http://localhost:$(sed -n 's/^PANEL_HOST_PORT=//p' "$ROOT/.env" 2>/dev/null | tail -1 || echo 3000)/apps"
+echo "Open them from the panel's Apps page."

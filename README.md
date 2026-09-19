@@ -96,7 +96,10 @@ make web-apps    # scripts/build_web_apps.sh
 
 The panel then lists every surface — technician app, customer app and the
 customer website at <https://shiraztyres.co.uk/> — on **Apps**, each with an
-Open button and the numbers to sign in with. The builds are served same-origin
+Open button and the numbers to sign in with. The API address is baked into
+these builds, and is taken from `NEXT_PUBLIC_API_BASE_URL` in `.env`, so a
+stack published on a server produces apps that reach that server rather than
+whoever opens them. The builds are served same-origin
 by the panel, at
 <http://localhost:3010/apps/driver/index.html> and
 <http://localhost:3010/apps/customer/index.html>,
