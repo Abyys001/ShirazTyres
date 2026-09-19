@@ -34,6 +34,8 @@ if [ -f "$ROOT/.env" ]; then
   BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' "$ROOT/.env" | tail -1)"
   ENV_API_BASE_URL="$(sed -n 's/^NEXT_PUBLIC_API_BASE_URL=//p' "$ROOT/.env" | tail -1)"
   ENV_WS_BASE_URL="$(sed -n 's/^NEXT_PUBLIC_WS_BASE_URL=//p' "$ROOT/.env" | tail -1)"
+  ENV_MAP_TILE_URL="$(sed -n 's/^MAP_TILE_URL=//p' "$ROOT/.env" | tail -1)"
+  ENV_MAP_ATTRIBUTION="$(sed -n 's/^MAP_TILE_ATTRIBUTION=//p' "$ROOT/.env" | tail -1)"
 fi
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
 API_BASE_URL="${API_BASE_URL:-${ENV_API_BASE_URL:-http://localhost:$BACKEND_HOST_PORT/api/v1}}"
@@ -44,6 +46,19 @@ WS_BASE_URL="${WS_BASE_URL:-${ENV_WS_BASE_URL:-ws://localhost:$BACKEND_HOST_PORT
 # hidden. It is the whole point of the browser build, so it is asked for
 # explicitly. DEV_SIGN_IN=false turns it off for a demo.
 DEV_SIGN_IN="${DEV_SIGN_IN:-true}"
+
+# The basemap. `AppConfig.mapTileUrl` falls back to OpenStreetMap only in a
+# debug build — a release one draws its own graticule rather than quietly taking
+# tiles nobody paid for. `flutter build web` is a release build, so a web app
+# built without this had no map at all: the picker and the live ETA screen came
+# up as a bare grid of coordinates. It is the same MAP_TILE_URL the panel and
+# the website are handed by docker-compose, so all four surfaces agree.
+MAP_TILE_URL="${MAP_TILE_URL:-${ENV_MAP_TILE_URL:-}}"
+MAP_ATTRIBUTION="${MAP_ATTRIBUTION:-${ENV_MAP_ATTRIBUTION:-© OpenStreetMap contributors}}"
+
+if [ -z "$MAP_TILE_URL" ]; then
+  echo "note: MAP_TILE_URL is empty — both apps will draw a graticule, not a map." >&2
+fi
 
 build() {
   local dir="$1" slug="$2" label="$3"
@@ -66,7 +81,9 @@ build() {
       --base-href "/apps/$slug/" \
       --dart-define=API_BASE_URL="$API_BASE_URL" \
       --dart-define=WS_BASE_URL="$WS_BASE_URL" \
-      --dart-define=DEV_SIGN_IN="$DEV_SIGN_IN"
+      --dart-define=DEV_SIGN_IN="$DEV_SIGN_IN" \
+      --dart-define=MAP_TILE_URL="$MAP_TILE_URL" \
+      --dart-define=MAP_ATTRIBUTION="$MAP_ATTRIBUTION"
   )
   mkdir -p "$OUT"
   cp -r "$ROOT/$dir/build/web" "$OUT/$slug"
@@ -77,4 +94,5 @@ build mobile_customer customer "Customer app"
 
 echo
 echo "Built against $API_BASE_URL"
+echo "Basemap: ${MAP_TILE_URL:-none (graticule only)}"
 echo "Open them from the panel's Apps page."

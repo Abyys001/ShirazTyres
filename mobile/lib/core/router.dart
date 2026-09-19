@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth.dart';
+import '../providers/settings.dart';
 import '../screens/history_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/invoice_screen.dart';
@@ -16,9 +17,15 @@ import '../screens/splash_screen.dart';
 import '../screens/vehicle_screen.dart';
 
 /// Bridges Riverpod state onto go_router's Listenable-based refresh.
+///
+/// Both of these decide where a resolved session lands, so both have to wake
+/// the router: the deferred-setup choice is read back from the device a frame
+/// or two after launch, and a redirect taken before it arrives would send a
+/// driver who has already said "later" straight back to the form.
 class _AuthRefresh extends ChangeNotifier {
   _AuthRefresh(Ref ref) {
     ref.listen<AuthState>(authControllerProvider, (_, __) => notifyListeners());
+    ref.listen<int?>(deferredSetupProvider, (_, __) => notifyListeners());
   }
 }
 
@@ -42,8 +49,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         return onAuthScreen ? null : '/phone';
       }
       if (onAuthScreen || path == '/splash') {
-        // A driver with paperwork outstanding starts where the work is.
-        return auth.needsOnboarding ? '/onboarding' : '/';
+        // A driver with paperwork outstanding starts on the form — unless they
+        // have already chosen to finish it later, in which case they start
+        // where everybody else does, with the standing panel on the shift
+        // screen telling them what is still outstanding and offering the way
+        // back to it. Their account is registered with the office either way.
+        final deferred = ref.read(deferredSetupProvider) == auth.driver?.id;
+        return auth.needsOnboarding && !deferred ? '/onboarding' : '/';
       }
       return null;
     },

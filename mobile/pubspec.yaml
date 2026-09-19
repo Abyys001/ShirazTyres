@@ -23,6 +23,10 @@ dependencies:
   go_router: ^14.6.2
   image_picker: ^1.1.2
   intl: ^0.19.0
+  # Promoted from a transitive dependency: core/tile_store.dart keeps map
+  # tiles in the OS cache directory, which is the only place it is correct
+  # to put derived data the system may reclaim.
+  path_provider: ^2.1.6
   url_launcher: ^6.3.1
   web_socket_channel: ^3.0.1
 

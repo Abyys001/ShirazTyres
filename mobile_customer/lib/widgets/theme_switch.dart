@@ -30,11 +30,18 @@ class ThemeChoice extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider);
     final index = _options.indexWhere((option) => option.$1 == mode);
 
+    // The track is sized in text, not in pixels. At the larger accessibility
+    // scales a fixed 50px box clipped the labels it exists to show, and three
+    // unshrinkable rows of icon-plus-word overflowed the width — which is what
+    // put a stripe of overflow warning across this one row and nowhere else.
+    final scale = MediaQuery.textScalerOf(context);
+    final height = scale.scale(14) * 2.4 + 12;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final slot = (constraints.maxWidth - 8) / _options.length;
         return Container(
-          height: 50,
+          height: height.clamp(50.0, 88.0),
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: palette.surfaceSunken,
@@ -68,6 +75,10 @@ class ThemeChoice extends ConsumerWidget {
                       child: _Segment(
                         icon: icon,
                         label: label,
+                        // Below the width its own label needs, a segment keeps
+                        // the icon and drops the word rather than truncating it
+                        // to a letter and an ellipsis.
+                        showLabel: slot >= scale.scale(14) * 3.4 + 34,
                         selected: option == mode,
                         onTap: () {
                           Buzz.tap();
@@ -91,6 +102,7 @@ class _Segment extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.showLabel = true,
   });
 
   final IconData icon;
@@ -98,30 +110,49 @@ class _Segment extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// False when the track is too narrow for the word. The icon still says which
+  /// option this is, and the tooltip says it in full for anyone who needs it.
+  final bool showLabel;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final colour = selected ? palette.onGold : palette.inkMuted;
 
+    final content = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Icon(icon, size: 17, color: colour),
+        if (showLabel) ...<Widget>[
+          const SizedBox(width: 6),
+          // Flexible, because the width this sits in is a third of whatever the
+          // screen gives us and the word is whatever the system's text scale
+          // makes of it. An ellipsis is a poor label; an overflow is not a
+          // label at all.
+          Flexible(
+            child: AnimatedDefaultTextStyle(
+              duration: Motion.fast,
+              style: TextStyle(
+                fontFamily: Fonts.sans,
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                color: colour,
+              ),
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
+      ],
+    );
+
     return InkWell(
       borderRadius: BorderRadius.circular(Radii.pill),
       onTap: onTap,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(icon, size: 17, color: colour),
-          const SizedBox(width: 6),
-          AnimatedDefaultTextStyle(
-            duration: Motion.fast,
-            style: TextStyle(
-              fontFamily: Fonts.sans,
-              fontSize: 14,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-              color: colour,
-            ),
-            child: Text(label),
-          ),
-        ],
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: showLabel ? content : Tooltip(message: label, child: content),
       ),
     );
   }

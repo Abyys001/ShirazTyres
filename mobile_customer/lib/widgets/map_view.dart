@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/config.dart';
 import '../core/geo.dart';
 import '../core/theme.dart';
+import '../core/tile_cache.dart';
 
 /// A slippy map, drawn from raster tiles when the build has a tile service and
 /// from its own graticule when it has not.
@@ -282,11 +283,11 @@ class _Tile extends StatelessWidget {
         .replaceAll('{y}', '$y')
         .replaceAll('{s}', 'a');
 
-    return Image.network(
-      source,
+    // Through [TileCache] rather than straight at the network: panning back to
+    // where you just were should not re-download the view you had a second ago.
+    return Image(
+      image: TileImage(source),
       fit: BoxFit.fill,
-      // Tile services ask for one, and a request without it can be refused.
-      headers: const <String, String>{'User-Agent': 'ShirazTyres/2.0 (+support@shiraztyres.co.uk)'},
       gaplessPlayback: true,
       // A tile that will not load leaves the graticule showing through rather
       // than a broken-image glyph.

@@ -42,3 +42,54 @@ class ThemeModeController extends Notifier<ThemeMode> {
 
 final themeModeProvider =
     NotifierProvider<ThemeModeController, ThemeMode>(ThemeModeController.new);
+
+/// The driver who put their registration aside to finish later, by id.
+///
+/// Registration is not a gate the app can afford to hold somebody behind. A new
+/// starter is often signed in on the forecourt with the paperwork in a van, or
+/// sent the app the night before with nothing to photograph yet — and a cold
+/// start used to drop them back on the same form with no way past it, on an
+/// account the office could already see.
+///
+/// So the form is a destination, not a toll. The account is registered at first
+/// sign-in either way and reaches the panel's approval queue with whatever it
+/// has; this only decides whether the app opens *on* the form.
+class DeferredSetupController extends Notifier<int?> {
+  /// Whether somebody has decided since launch.
+  ///
+  /// Reading the device is asynchronous, and a driver can tap *Finish this
+  /// later* — or finish it — while that read is still in flight. Letting the
+  /// read land unconditionally would overwrite the newer choice with the older
+  /// one, which on a slow keystore is exactly the launch where it matters:
+  /// tap "later", get sent back to the form anyway.
+  bool _decided = false;
+
+  @override
+  int? build() {
+    _restore();
+    return null;
+  }
+
+  Future<void> _restore() async {
+    final stored = await ref.read(settingsStoreProvider).readDeferredSetup();
+    if (_decided || stored == state) return;
+    state = stored;
+  }
+
+  Future<void> deferFor(int driverId) async {
+    _decided = true;
+    state = driverId;
+    await ref.read(settingsStoreProvider).writeDeferredSetup(driverId);
+  }
+
+  /// On completion, and on sign-out — see [AuthController.signOut].
+  Future<void> clear() async {
+    _decided = true;
+    if (state == null) return;
+    state = null;
+    await ref.read(settingsStoreProvider).writeDeferredSetup(null);
+  }
+}
+
+final deferredSetupProvider =
+    NotifierProvider<DeferredSetupController, int?>(DeferredSetupController.new);

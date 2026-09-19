@@ -222,7 +222,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
           const SizedBox(height: Space.xl),
           const SectionHeader('Appearance'),
-          const ThemeChoice(),
+          // Every other heading on this screen sits on a card. This one did
+          // not, so the label floated over a bare control with nothing under it
+          // and the run of sections visibly broke at exactly this row.
+          const SurfaceCard(child: ThemeChoice()),
 
           if (_error != null) ...<Widget>[
             const SizedBox(height: Space.lg),
