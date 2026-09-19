@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 
 import { BrandMark } from "@/components/brand";
 import { Button, Field, Input } from "@/components/ui";
+import { DEV_TOOLS } from "@/lib/dev-tools";
 
 /**
  * Seeded by `make seed`. Shown only in a development build, so the owner and
@@ -13,7 +14,7 @@ import { Button, Field, Input } from "@/components/ui";
 const DEV_ACCOUNTS = [
   { email: "owner@shiraztyres.co.uk", password: "shiraz1234", role: "Owner — full access" },
 ];
-const DEV_MODE = process.env.NODE_ENV === "development";
+const DEV_MODE = DEV_TOOLS;
 
 function LoginForm() {
   const router = useRouter();

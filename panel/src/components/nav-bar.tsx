@@ -9,6 +9,7 @@ import { BrandLockup } from "@/components/brand";
 import { LiveBadge } from "@/components/live-sync";
 import { ChangePasswordForm } from "@/components/staff-manager";
 import { api } from "@/lib/client-api";
+import { DEV_TOOLS } from "@/lib/dev-tools";
 import type { Compliance, JobStats, StaffUser } from "@/types/api";
 
 type NavLink = { href: string; label: string; icon: ReactNode };
@@ -43,14 +44,12 @@ const GROUPS: { heading: string; links: NavLink[] }[] = [
       { href: "/settings", label: "Settings", icon: <IconSettings /> },
       /*
        * Every surface in a browser tab, for testing the flow end to end without
-       * an emulator. Development only: the page links to localhost ports and
-       * offers signed-in-as-anybody builds, neither of which belongs on a
-       * deployed panel. NODE_ENV is inlined at build time, so a production
-       * bundle does not carry the link at all.
+       * an emulator. The page links to localhost ports and offers
+       * signed-in-as-anybody builds, neither of which belongs on a panel the
+       * public can reach — see `lib/dev-tools`, which is inlined at build time,
+       * so a bundle built without it does not carry the link at all.
        */
-      ...(process.env.NODE_ENV === "production"
-        ? []
-        : [{ href: "/apps", label: "Apps", icon: <IconApps /> }]),
+      ...(DEV_TOOLS ? [{ href: "/apps", label: "Apps", icon: <IconApps /> }] : []),
     ],
   },
 ];

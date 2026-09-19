@@ -1,0 +1,39 @@
+# Hot reload for the two Next.js surfaces.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   make up-dev
+#
+# The default stack serves production bundles, because a development server is
+# the wrong thing to put in front of anybody: it compiles each route on first
+# visit and hands the browser megabytes of unminified JavaScript, which over a
+# real connection reads as a panel that has lost its API. This override puts the
+# source back on a bind mount and runs `next dev` for when you are working on
+# the panel or the website and want a save to show up.
+#
+# Everything the production image compiles in — NEXT_PUBLIC_* and COOKIE_SECURE
+# — is read from the environment here instead, so a change needs no rebuild.
+services:
+  panel:
+    build:
+      target: build
+    environment:
+      NEXT_PUBLIC_DEV_TOOLS: ${PANEL_DEV_TOOLS:-true}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      NODE_ENV: development
+    volumes:
+      - ./panel:/app
+      - /app/node_modules
+      - /app/.next
+    command: ["npm", "run", "dev"]
+
+  website:
+    build:
+      target: build
+    environment:
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      NODE_ENV: development
+    volumes:
+      - ./website:/app
+      - /app/node_modules
+      - /app/.next
+    command: ["npm", "run", "dev"]

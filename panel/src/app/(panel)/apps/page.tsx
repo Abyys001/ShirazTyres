@@ -4,6 +4,7 @@ import path from "node:path";
 import { notFound } from "next/navigation";
 
 import { Card } from "@/components/ui";
+import { DEV_TOOLS } from "@/lib/dev-tools";
 
 /**
  * Every surface of the product, openable in a browser tab from the panel.
@@ -81,7 +82,7 @@ export default function AppsPage() {
   // The rail hides the link in a production bundle; the route has to refuse as
   // well, or a deployed panel still serves a page of localhost links to anybody
   // who types the path.
-  if (process.env.NODE_ENV === "production") notFound();
+  if (!DEV_TOOLS) notFound();
 
   return (
     <div className="space-y-4">

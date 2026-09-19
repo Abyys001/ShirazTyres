@@ -2,4 +2,3 @@ node_modules
 .next
 .next-*
 npm-debug.log
-public/apps

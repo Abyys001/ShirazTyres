@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate makemigrations seed test test-demo lint schema types shell psql websocket-check emulator waydroid web-apps
+.PHONY: up up-dev down logs migrate makemigrations seed test test-demo lint schema types shell psql websocket-check emulator waydroid web-apps
 
 # Boot the Pixel_Tyres emulator and run BOTH Flutter apps in debug mode
 # (hot reload enabled) inside tmux. Press r / R / q in each pane.
@@ -16,6 +16,12 @@ web-apps:
 
 up:
 	docker compose up -d --build
+
+# The same stack with `next dev` and a bind mount behind the panel and the
+# website, for working on either of them. Slower to load by a wide margin —
+# that is what it costs to have a save show up without a rebuild.
+up-dev:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 down:
 	docker compose down

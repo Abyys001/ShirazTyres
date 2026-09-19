@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { API_BASE_URL } from "@/lib/config";
 import { setSession } from "@/lib/session";
+import { DEV_TOOLS } from "@/lib/dev-tools";
 
 /**
  * The seeded-account buttons on /login, as a plain form POST.
@@ -17,7 +18,7 @@ import { setSession } from "@/lib/session";
  * Development only, like the buttons themselves.
  */
 export async function POST(request: NextRequest) {
-  if (process.env.NODE_ENV === "production") {
+  if (!DEV_TOOLS) {
     return new NextResponse("Not found", { status: 404 });
   }
 
