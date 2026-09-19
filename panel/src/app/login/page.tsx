@@ -23,15 +23,19 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
+  /**
+   * Takes the credentials rather than reading the state: the development
+   * buttons below sign in with an account the fields have not been set to yet,
+   * and a setState is not visible until the next render.
+   */
+  async function signIn(withEmail: string, withPassword: string) {
     setPending(true);
     setError(null);
 
     const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: withEmail, password: withPassword }),
     });
 
     if (!response.ok) {
@@ -43,6 +47,11 @@ function LoginForm() {
 
     router.replace(params.get("next") || "/jobs");
     router.refresh();
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    void signIn(email, password);
   }
 
   return (
@@ -75,18 +84,22 @@ function LoginForm() {
         <div className="rounded-2xl border border-line bg-surface-sunken p-4">
           <p className="text-sm font-medium text-ink">Development sign-in</p>
           <p className="mt-0.5 text-xs text-ink-subtle">
-            Seeded by <span className="tabular">make seed</span>. Pick one to fill the form.
+            Seeded by <span className="tabular">make seed</span>. Pick one to sign in.
           </p>
           <ul className="mt-3 space-y-1">
             {DEV_ACCOUNTS.map((account) => (
               <li key={account.email}>
                 <button
                   type="button"
+                  disabled={pending}
                   onClick={() => {
+                    // Fill the fields as well, so a failed sign-in leaves
+                    // something to correct rather than two empty boxes.
                     setEmail(account.email);
                     setPassword(account.password);
+                    void signIn(account.email, account.password);
                   }}
-                  className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-surface-raised"
+                  className="w-full rounded-md px-2 py-1.5 text-left transition hover:bg-surface-raised disabled:opacity-50"
                 >
                   <span className="block text-sm tabular text-ink">{account.email}</span>
                   <span className="block text-xs text-ink-subtle">
