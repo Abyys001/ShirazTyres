@@ -32,11 +32,21 @@ function LoginForm() {
     setPending(true);
     setError(null);
 
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: withEmail, password: withPassword }),
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: withEmail, password: withPassword }),
+      });
+    } catch {
+      // A rejected fetch — offline, the panel restarting, the request blocked —
+      // otherwise left the button disabled and said nothing, which reads as a
+      // button that does not work at all.
+      setError("Could not reach the panel. Is it still running?");
+      setPending(false);
+      return;
+    }
 
     if (!response.ok) {
       const body = await response.json().catch(() => null);
