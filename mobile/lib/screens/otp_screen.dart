@@ -96,6 +96,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _verify() async {
+    // A code is spent the moment the API accepts it, so two attempts with the
+    // same one leaves the second refused as a code nobody asked for. The field
+    // submits on its own when it fills up, and the button is still there to be
+    // pressed, so the two have to be kept from overlapping.
+    if (_verifying) return;
+
     final code = _code.text.trim();
     if (code.length < 4) {
       setState(() => _error = 'Enter the code we texted you.');
@@ -113,6 +119,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       context.go(created ? '/onboarding' : '/');
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.fieldError('code') ?? error.message);
+    } catch (error) {
+      // Not the API refusing the code — the device failing at something after
+      // it was accepted. This screen used to sit unchanged through one of
+      // those, with the code already spent, which reads as a button that does
+      // nothing and ends in "no code was requested for this number".
+      if (mounted) setState(() => _error = 'Could not finish signing in. $error');
     } finally {
       if (mounted) setState(() => _verifying = false);
     }

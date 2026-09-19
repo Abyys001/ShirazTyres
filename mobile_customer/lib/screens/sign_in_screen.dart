@@ -61,6 +61,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       await action();
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.fieldError('phone') ?? error.message);
+    } catch (error) {
+      // Not the API refusing us — the device failing at something after it
+      // agreed. Verification spends the code, so silence here leaves a screen
+      // that cannot be got off: the next press is refused as a code nobody
+      // asked for.
+      if (mounted) setState(() => _error = 'Could not finish that. $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

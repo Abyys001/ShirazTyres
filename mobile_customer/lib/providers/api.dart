@@ -10,11 +10,11 @@ import '../core/job_cache.dart';
 import '../core/secure_storage.dart';
 import '../core/token_store.dart';
 
-final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appSecureStorage));
+final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appStorage));
 
 /// The last call-out this device saw, so a cold start with no signal still
 /// opens on it.
-final jobCacheProvider = Provider<JobCache>((ref) => const JobCache(appSecureStorage));
+final jobCacheProvider = Provider<JobCache>((ref) => const JobCache(appStorage));
 
 /// Bumped when a refresh fails, so the auth controller can react without the
 /// client and the controller depending on each other.

@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart' show PlatformException;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'app_storage.dart';
 
 /// JWTs live in the platform keystore, never in shared preferences.
 ///
@@ -9,10 +8,20 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// read is defensive: an entry the keystore can no longer decrypt (it came back
 /// from an OS backup without the key that wrote it) has to read as "nothing
 /// stored" rather than throw, or the splash screen never resolves.
+///
+/// Every access catches *everything*, not a platform exception alone. On the
+/// web this package encrypts through `crypto.subtle`, which a browser only
+/// exposes in a secure context — over plain http, on anything but localhost,
+/// it is simply absent and the plugin fails a null check rather than raising
+/// something typed. That threw straight through a sign-in that had already
+/// succeeded: the code was spent, the session was never stored, the screen
+/// never moved, and the next attempt was refused as a code nobody asked for.
+/// Storage that cannot be reached is a session that does not outlive the tab,
+/// which is a thing to live with; it is not a reason to fail signing in.
 class TokenStore {
   const TokenStore(this._storage);
 
-  final FlutterSecureStorage _storage;
+  final AppStorage _storage;
 
   static const _accessKey = 'st_access';
   static const _refreshKey = 'st_refresh';
@@ -52,7 +61,7 @@ class TokenStore {
   Future<String?> _read(String key) async {
     try {
       return await _storage.read(key: key);
-    } on PlatformException {
+    } catch (_) {
       await _delete(key);
       return null;
     }
@@ -61,7 +70,7 @@ class TokenStore {
   Future<void> _write(String key, String value) async {
     try {
       await _storage.write(key: key, value: value);
-    } on PlatformException {
+    } catch (_) {
       // Nothing to be done about it here; the session simply will not survive
       // this launch, and the next sign-in writes again.
     }
@@ -70,7 +79,7 @@ class TokenStore {
   Future<void> _delete(String key) async {
     try {
       await _storage.delete(key: key);
-    } on PlatformException {
+    } catch (_) {
       // Already unreadable, which is all the caller wanted.
     }
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show PlatformException;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'app_storage.dart';
 
 import 'geo.dart';
 
@@ -13,7 +12,7 @@ import 'geo.dart';
 class SettingsStore {
   const SettingsStore(this._storage);
 
-  final FlutterSecureStorage _storage;
+  final AppStorage _storage;
 
   static const _themeKey = 'st_theme_mode';
   static const _pinKey = 'st_manual_pin';
@@ -23,7 +22,7 @@ class SettingsStore {
   Future<ThemeMode> readThemeMode() async {
     try {
       return _decode(await _storage.read(key: _themeKey));
-    } on PlatformException {
+    } catch (_) {
       return ThemeMode.system;
     }
   }
@@ -31,7 +30,7 @@ class SettingsStore {
   Future<void> writeThemeMode(ThemeMode mode) async {
     try {
       await _storage.write(key: _themeKey, value: mode.name);
-    } on PlatformException {
+    } catch (_) {
       // The choice still applies for this launch; the next write may stick.
     }
   }
@@ -43,7 +42,7 @@ class SettingsStore {
   Future<LatLng?> readPin() async {
     try {
       return parseLatLng(await _storage.read(key: _pinKey) ?? '');
-    } on PlatformException {
+    } catch (_) {
       return null;
     }
   }
@@ -55,7 +54,7 @@ class SettingsStore {
       } else {
         await _storage.write(key: _pinKey, value: '${point.latitude},${point.longitude}');
       }
-    } on PlatformException {
+    } catch (_) {
       // As above: this launch still has the pin it was given.
     }
   }

@@ -9,7 +9,7 @@ import '../core/api_client.dart';
 import '../core/secure_storage.dart';
 import '../core/token_store.dart';
 
-final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appSecureStorage));
+final tokenStoreProvider = Provider<TokenStore>((ref) => const TokenStore(appStorage));
 
 /// Bumped when a refresh fails. Deliberately depends on nothing: the auth
 /// controller listens to it, so the client can report a dead session without

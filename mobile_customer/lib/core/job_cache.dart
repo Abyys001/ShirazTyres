@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart' show PlatformException;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'app_storage.dart';
 
 /// The last call-out the API confirmed, kept on the device.
 ///
@@ -15,7 +14,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class JobCache {
   const JobCache(this._storage);
 
-  final FlutterSecureStorage _storage;
+  final AppStorage _storage;
 
   static const _activeKey = 'st_active_job';
   static const _historyKey = 'st_job_history';
@@ -63,7 +62,7 @@ class JobCache {
     for (final key in const <String>[_activeKey, _historyKey, _stampKey]) {
       try {
         await _storage.delete(key: key);
-      } on PlatformException {
+      } catch (_) {
         // Already unreadable, which is all the caller wanted.
       }
     }
@@ -80,7 +79,7 @@ class JobCache {
   Future<String?> _read(String key) async {
     try {
       return await _storage.read(key: key);
-    } on PlatformException {
+    } catch (_) {
       return null;
     }
   }
@@ -88,7 +87,7 @@ class JobCache {
   Future<void> _write(String key, String value) async {
     try {
       await _storage.write(key: key, value: value);
-    } on PlatformException {
+    } catch (_) {
       // A cache that cannot be written is a cache miss next launch, no more.
     }
   }

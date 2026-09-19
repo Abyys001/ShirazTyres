@@ -5,7 +5,7 @@ import '../core/secure_storage.dart';
 import '../core/settings_store.dart';
 
 final settingsStoreProvider = Provider<SettingsStore>(
-  (ref) => const SettingsStore(appSecureStorage),
+  (ref) => const SettingsStore(appStorage),
 );
 
 /// The light/dark choice, read back from the device on launch.

@@ -1,5 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'app_storage.dart';
+
 /// The one secure store this app uses, for tokens, the cached profile and
 /// preferences alike.
 ///
@@ -17,3 +19,7 @@ const FlutterSecureStorage appSecureStorage = FlutterSecureStorage(
     publicKey: 'shiraztyres_customer',
   ),
 );
+
+/// What the stores actually take: the encrypted store above, and the fallback
+/// for the one case where a browser will not provide it.
+const AppStorage appStorage = AppStorage(appSecureStorage);
