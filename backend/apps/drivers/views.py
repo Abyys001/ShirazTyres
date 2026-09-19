@@ -299,13 +299,40 @@ class DriverViewSet(viewsets.ModelViewSet):
     @extend_schema(request=VerificationUpdateSerializer, responses={200: DriverSerializer})
     @action(detail=True, methods=["post"])
     def verification(self, request, pk=None):
+        """Section 8.2's decision, and the record of who took it.
+
+        Approving somebody puts them in front of stranded customers, and
+        suspending them takes their income away. Creating a driver has always
+        been written down (``perform_create``); the decision that actually lets
+        them work was not, which left "who approved this technician, and when?"
+        answerable only from an application log.
+        """
         serializer = VerificationUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        driver = set_verification(
-            self.get_object(),
-            serializer.validated_data["verification_status"],
-            by=request.user,
-            note=serializer.validated_data.get("note", ""),
+
+        target = self.get_object()
+        previous = target.verification_status
+        status_wanted = serializer.validated_data["verification_status"]
+        note = serializer.validated_data.get("note", "")
+
+        driver = set_verification(target, status_wanted, by=request.user, note=note)
+
+        actor = request.user.name or request.user.email
+        record(
+            "driver",
+            f"{driver.name or driver.phone}: {previous} → {driver.verification_status}",
+            severity=(
+                AuditEvent.Severity.INFO
+                if driver.is_approved
+                else AuditEvent.Severity.WARNING
+            ),
+            actor=actor,
+            subject_type="driver",
+            subject_id=driver.pk,
+            phone=driver.phone,
+            previous_status=previous,
+            verification_status=driver.verification_status,
+            note=note,
         )
         return Response(DriverSerializer(driver).data)
 

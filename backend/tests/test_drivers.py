@@ -193,6 +193,52 @@ def test_an_unapproved_driver_cannot_go_online(pending_driver_client):
     assert "is_online" in response.data["errors"]
 
 
+def test_a_pending_driver_is_told_what_they_are_waiting_for(pending_driver_client):
+    """The refusal is the only thing the driver app has to explain the wait with.
+
+    Every dispatch endpoint answers a pending driver with 403. Before this said
+    who they were waiting on, the app rendered that as "could not load", which
+    reads as a fault in the app rather than a decision nobody has taken yet.
+    """
+    for path in ("/api/v1/driver/offers", "/api/v1/driver/jobs/available", "/api/v1/driver/jobs"):
+        response = pending_driver_client.get(path)
+        assert response.status_code == 403, path
+        assert "awaiting approval" in response.data["detail"]
+        assert "accept shifts" in response.data["detail"]
+
+
+def test_a_suspended_driver_is_not_told_to_wait_for_an_approval(pending_driver, pending_driver_client):
+    """Suspension already happened; telling them to keep waiting is a lie."""
+    pending_driver.verification_status = Driver.Verification.SUSPENDED
+    pending_driver.save(update_fields=["verification_status"])
+
+    response = pending_driver_client.get("/api/v1/driver/offers")
+    assert response.status_code == 403
+    assert "suspended" in response.data["detail"]
+    assert "awaiting approval" not in response.data["detail"]
+
+
+def test_the_approval_decision_is_written_down(staff_client, pending_driver):
+    """Who let this technician in front of customers, and when."""
+    from apps.audit.models import AuditEvent
+
+    for document_type in ("insurance", "licence", "mot"):
+        _document(pending_driver, document_type)
+
+    response = staff_client.post(
+        f"/api/v1/drivers/{pending_driver.pk}/verification",
+        {"verification_status": "approved", "note": "References checked"}, format="json",
+    )
+    assert response.status_code == 200, response.data
+
+    event = AuditEvent.objects.filter(category="driver", subject_id=str(pending_driver.pk)).first()
+    assert event is not None
+    assert event.payload["previous_status"] == Driver.Verification.PENDING
+    assert event.payload["verification_status"] == Driver.Verification.APPROVED
+    assert event.payload["note"] == "References checked"
+    assert event.actor
+
+
 def test_suspending_a_driver_takes_them_offline(staff_client, driver):
     response = staff_client.post(
         f"/api/v1/drivers/{driver.pk}/verification",

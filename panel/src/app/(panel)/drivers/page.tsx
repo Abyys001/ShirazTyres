@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 
+import { ApprovalQueue } from "@/components/approval-queue";
 import {
-  AlertBanner,
   Card,
   EmptyState,
   Select,
@@ -40,27 +40,45 @@ export default function DriversPage() {
     refetchInterval: 60_000,
   });
 
+  /*
+   * Its own query rather than a slice of the roster above, because the roster
+   * is filtered by whatever the office last chose and the queue must be there
+   * whatever that was. Somebody waiting on an approval is waiting on this
+   * panel, so it cannot be a view that has to be navigated to.
+   */
+  const pending = useQuery({
+    queryKey: ["drivers", "pending-queue"],
+    queryFn: () => api<Paginated<Driver>>("/drivers?verification_status=pending&ordering=created_at"),
+    refetchInterval: 60_000,
+  });
+
+  const queue = pending.data?.results ?? [];
   const expiring = compliance.data?.expiring ?? [];
 
   return (
     <div className="space-y-6">
-      {compliance.data && compliance.data.counts.pending > 0 ? (
-        <AlertBanner>
-          <span>
-            <strong>{compliance.data.counts.pending}</strong> driver
-            {compliance.data.counts.pending === 1 ? "" : "s"} waiting for approval, and{" "}
-            {compliance.data.pending_documents} document
-            {compliance.data.pending_documents === 1 ? "" : "s"} to review.
-          </span>
-        </AlertBanner>
-      ) : null}
-
       <StatStrip>
-        <Stat label="Awaiting approval" value={compliance.data?.counts.pending ?? 0} tone="alert" />
+        <Stat
+          label="Awaiting approval"
+          value={compliance.data?.counts.pending ?? 0}
+          tone="alert"
+          href="#approval-queue"
+        />
         <Stat label="Approved" value={compliance.data?.counts.approved ?? 0} />
         <Stat label="Suspended" value={compliance.data?.counts.suspended ?? 0} tone="alert" />
         <Stat label="On shift now" value={compliance.data?.counts.online ?? 0} />
       </StatStrip>
+
+      {/*
+        * The queue only draws itself when somebody is in it. An empty card
+        * above the roster every day is how a card stops being looked at, and
+        * this is the one that must never be missed on the day it is not empty.
+        */}
+      {queue.length > 0 || pending.isLoading ? (
+        <div id="approval-queue" className="scroll-mt-24">
+          <ApprovalQueue drivers={queue} isLoading={pending.isLoading} />
+        </div>
+      ) : null}
 
       {expiring.length > 0 ? (
         <Card title="Documents expiring">

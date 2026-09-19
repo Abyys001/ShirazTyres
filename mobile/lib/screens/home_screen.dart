@@ -94,6 +94,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// "Has anybody looked at me yet?" — the one thing a waiting technician wants
+  /// to do, and the one thing the screen has to answer honestly.
+  ///
+  /// Approval usually arrives on the socket without anybody asking, but a phone
+  /// that slept through it, or was out of signal when it landed, has no other
+  /// way back. Saying nothing on an unchanged standing reads as a broken button,
+  /// so the answer is always spoken either way.
+  Future<void> _checkStanding() async {
+    Buzz.tap();
+    setState(() => _busy = true);
+    final before = ref.read(currentDriverProvider)?.verificationStatus;
+    await ref.read(authControllerProvider.notifier).refreshDriver();
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    final driver = ref.read(currentDriverProvider);
+    if (driver == null) return;
+    if (driver.isApproved) {
+      Buzz.alert();
+      _say('You are approved. Go on shift to start taking jobs.');
+    } else if (driver.verificationStatus != before) {
+      _say(driver.statusDisplay);
+    } else {
+      _say('Still with the office. We will tell you the moment it changes.');
+    }
+  }
+
   void _say(String message, {bool offerPin = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -178,9 +205,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, Space.xxxl),
           children: <Widget>[
+            // Until the office approves them, a technician has no shift, no
+            // offers and no board — every one of those endpoints refuses them.
+            // The whole screen is the standing, rather than the standing being
+            // a banner above three empty lists that look like a fault.
             if (!driver.isApproved) ...<Widget>[
-              _VerificationNotice(driver: driver),
-              const SizedBox(height: Space.lg),
+              const SizedBox(height: Space.sm),
+              _StandingPanel(
+                driver: driver,
+                busy: _busy,
+                onCheckAgain: _checkStanding,
+              ),
             ],
 
             if (driver.isApproved) ...<Widget>[
@@ -205,45 +240,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ],
 
-            current.when(
-              data: (job) => job == null
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.only(bottom: Space.lg),
-                      child: _CurrentJobCard(job: job),
-                    ),
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-
-            offers.when(
-              data: (list) {
-                final live = list.where((offer) => offer.isLive).toList();
-                if (live.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    SectionHeader('${live.length} live offer${live.length == 1 ? '' : 's'}'),
-                    for (final offer in live)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Space.md),
-                        child: OfferCard(
-                          offer: offer,
-                          busy: _busy,
-                          onAccept: () => _answer(offer.job?.id ?? 0, accept: true),
-                          onReject: () => _answer(offer.job?.id ?? 0, accept: false),
-                        ),
+            if (driver.isApproved)
+              current.when(
+                data: (job) => job == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: Space.lg),
+                        child: _CurrentJobCard(job: job),
                       ),
-                  ],
-                );
-              },
-              loading: () => const LoadingBlock(),
-              error: (error, __) => MessageView(
-                title: 'Could not load offers',
-                message: '$error',
-                onRetry: () => ref.read(offersProvider.notifier).refresh(),
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
               ),
-            ),
+
+            if (driver.isApproved)
+              offers.when(
+                data: (list) {
+                  final live = list.where((offer) => offer.isLive).toList();
+                  if (live.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      SectionHeader('${live.length} live offer${live.length == 1 ? '' : 's'}'),
+                      for (final offer in live)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: Space.md),
+                          child: OfferCard(
+                            offer: offer,
+                            busy: _busy,
+                            onAccept: () => _answer(offer.job?.id ?? 0, accept: true),
+                            onReject: () => _answer(offer.job?.id ?? 0, accept: false),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+                loading: () => const LoadingBlock(),
+                error: (error, __) => MessageView(
+                  title: 'Could not load offers',
+                  message: '$error',
+                  onRetry: () => ref.read(offersProvider.notifier).refresh(),
+                ),
+              ),
 
             // Everything still waiting for somebody, offered or not. An offer
             // expires and vanishes with the round; this list is where the work
@@ -511,51 +548,313 @@ class _ShiftSwitchState extends State<_ShiftSwitch> with SingleTickerProviderSta
   }
 }
 
-class _VerificationNotice extends StatelessWidget {
-  const _VerificationNotice({required this.driver});
+/// What a technician who cannot yet take work is waiting for, and on whom.
+///
+/// Registration (section 8.1) and the administrator's decision (8.2) are two
+/// separate waits, and conflating them is the whole problem this screen exists
+/// to fix. Somebody whose paperwork is in has nothing left to do and must be
+/// told so plainly; somebody with a document outstanding has to be sent back to
+/// onboarding. The screen therefore leads with whose move it is, then shows the
+/// three stages so the wait has a shape, and only then explains itself.
+class _StandingPanel extends StatelessWidget {
+  const _StandingPanel({
+    required this.driver,
+    required this.busy,
+    required this.onCheckAgain,
+  });
 
   final Driver driver;
+  final bool busy;
+  final Future<void> Function() onCheckAgain;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
-    final suspended = driver.isSuspended;
-    final tone = suspended ? palette.danger : palette.warning;
 
-    return SurfaceCard(
-      accent: tone,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
+    final tone = driver.isRejected
+        ? palette.danger
+        : driver.isSuspended
+            ? palette.danger
+            : driver.awaitingReview
+                ? palette.info
+                : palette.warning;
+
+    final ours = !driver.awaitingReview && !driver.isRejected;
+
+    final (String title, String body, IconData icon) = switch (driver) {
+      final d when d.isRejected => (
+          'Application not approved',
+          'The office has decided not to take this application forward. They can '
+              'tell you why, and whether anything can be done about it.',
+          Icons.do_not_disturb_on_outlined,
+        ),
+      final d when d.isSuspended => (
+          'Account suspended',
+          'You will not be offered jobs while this stands. It is usually a '
+              'document that has run out — upload a current one and the office '
+              'will review it.',
+          Icons.block,
+        ),
+      final d when d.awaitingReview => (
+          'Waiting for approval',
+          'Everything we need from you is in. A manager at the office now checks '
+              'new technicians before any work is sent out, and that is the only '
+              'thing left. As soon as they approve you, offers and the open board '
+              'appear on this screen and you can start accepting shifts.',
+          Icons.hourglass_top,
+        ),
+      _ => (
+          'Finish setting up',
+          'The office cannot approve you until the rest of your registration is '
+              'in. It takes a couple of minutes, and then your account goes to '
+              'them for approval.',
+          Icons.assignment_outlined,
+        ),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SurfaceCard(
+          accent: tone,
+          wash: driver.awaitingReview,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Icon(suspended ? Icons.block : Icons.pending_outlined, size: 20, color: tone),
-              const SizedBox(width: Space.md),
-              Expanded(
-                child: Text(
-                  suspended ? 'Account suspended' : 'Waiting for approval',
-                  style: theme.textTheme.titleLarge,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _StandingBadge(icon: icon, tone: tone, waiting: driver.awaitingReview),
+                  const SizedBox(width: Space.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(title, style: theme.textTheme.headlineSmall),
+                        const SizedBox(height: 2),
+                        Text(
+                          driver.isRejected
+                              ? 'CLOSED'
+                              : ours
+                                  ? 'OVER TO YOU'
+                                  : 'WITH THE OFFICE',
+                          style: palette.eyebrow,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+
+              const SizedBox(height: Space.lg),
+              ProgressRail(
+                stages: const <String>['Signed in', 'Your details', 'Office check', 'On shift'],
+                reached: driver.isRejected
+                    ? 1
+                    : driver.onboardingComplete
+                        ? 3
+                        : 2,
+                tone: tone,
+              ),
+
+              const SizedBox(height: Space.lg),
+              Text(
+                body,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+              ),
+
+              if (driver.verificationNote.isNotEmpty) ...<Widget>[
+                const SizedBox(height: Space.lg),
+                InlineNotice(
+                  driver.verificationNote,
+                  tone: tone,
+                  icon: Icons.chat_bubble_outline,
+                ),
+              ],
+
+              const SizedBox(height: Space.lg),
+              if (ours)
+                FilledButton.icon(
+                  onPressed: () {
+                    Buzz.tap();
+                    context.push('/onboarding');
+                  },
+                  icon: const Icon(Icons.arrow_forward, size: 19),
+                  label: Text(driver.isSuspended ? 'Upload a document' : 'Finish setting up'),
+                )
+              else
+                BusyButton(
+                  label: 'Check again',
+                  busy: busy,
+                  icon: Icons.refresh,
+                  outlined: true,
+                  onPressed: onCheckAgain,
+                ),
             ],
           ),
-          const SizedBox(height: Space.xs),
-          Text(
-            suspended ? 'Upload a current document to be reviewed.' : 'Finish your paperwork.',
-            style: theme.textTheme.bodyMedium,
-          ),
-          if (driver.verificationNote.isNotEmpty) ...<Widget>[
-            const SizedBox(height: Space.md),
-            InlineNotice(driver.verificationNote, tone: tone, icon: Icons.chat_bubble_outline),
-          ],
+        ),
+
+        // The receipt for what was handed over. A wait with nothing to show for
+        // it invites the same paperwork being uploaded a second time.
+        if (!driver.isRejected) ...<Widget>[
           const SizedBox(height: Space.lg),
-          FilledButton(
-            onPressed: () {
-              Buzz.tap();
-              context.push('/onboarding');
-            },
-            child: const Text('Finish setting up'),
+          SurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text('WHAT THE OFFICE HAS', style: palette.eyebrow),
+                const SizedBox(height: Space.md),
+                _ChecklistRow(
+                  label: 'Your name',
+                  detail: driver.name.isEmpty ? 'Not given yet' : driver.name,
+                  done: driver.name.isNotEmpty,
+                ),
+                _ChecklistRow(
+                  label: 'Your van',
+                  detail: driver.van?.title ?? 'No van registered yet',
+                  done: driver.vehicles.isNotEmpty,
+                ),
+                _ChecklistRow(
+                  label: 'Documents',
+                  detail: driver.missingDocuments.isNotEmpty
+                      ? 'Still needed: ${driver.missingDocuments.join(', ')}'
+                      : driver.documentsInReview > 0
+                          ? '${driver.documentsInReview} with the office for review'
+                          : '${driver.documents.length} uploaded',
+                  done: driver.missingDocuments.isEmpty,
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: Space.lg),
+        Center(
+          child: Text(
+            driver.awaitingReview
+                ? 'You do not have to keep this open — we will notify you.'
+                : 'Your phone number is ${driver.phone}.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The badge at the head of the standing card. It breathes while the wait is
+/// somebody else's, which is the difference between "in hand" and "stuck".
+class _StandingBadge extends StatefulWidget {
+  const _StandingBadge({required this.icon, required this.tone, required this.waiting});
+
+  final IconData icon;
+  final Color tone;
+  final bool waiting;
+
+  @override
+  State<_StandingBadge> createState() => _StandingBadgeState();
+}
+
+class _StandingBadgeState extends State<_StandingBadge> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.waiting) _pulse.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_StandingBadge old) {
+    super.didUpdateWidget(old);
+    if (widget.waiting == old.waiting) return;
+    widget.waiting ? _pulse.repeat() : _pulse.stop();
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          if (widget.waiting)
+            AnimatedBuilder(
+              animation: _pulse,
+              builder: (_, __) => Container(
+                width: 48 + 8 * _pulse.value,
+                height: 48 + 8 * _pulse.value,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: widget.tone.withValues(alpha: 0.45 * (1 - _pulse.value)),
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: widget.tone.withValues(alpha: palette.isDark ? 0.18 : 0.12),
+              shape: BoxShape.circle,
+              border: Border.all(color: widget.tone.withValues(alpha: 0.5), width: 2),
+            ),
+            child: Icon(widget.icon, size: 24, color: widget.tone),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChecklistRow extends StatelessWidget {
+  const _ChecklistRow({required this.label, required this.detail, required this.done});
+
+  final String label;
+  final String detail;
+  final bool done;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final tone = done ? palette.success : palette.warning;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Space.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            done ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 19,
+            color: tone,
+          ),
+          const SizedBox(width: Space.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(label, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 1),
+                Text(detail, style: theme.textTheme.bodySmall),
+              ],
+            ),
           ),
         ],
       ),

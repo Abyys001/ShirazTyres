@@ -1891,8 +1891,14 @@ paths:
   /api/v1/drivers/{id}/verification:
     post:
       operationId: drivers_verification_create
-      description: 'Panel-side driver management: onboarding review, documents, service
-        areas.'
+      description: |-
+        Section 8.2's decision, and the record of who took it.
+
+        Approving somebody puts them in front of stranded customers, and
+        suspending them takes their income away. Creating a driver has always
+        been written down (``perform_create``); the decision that actually lets
+        them work was not, which left "who approved this technician, and when?"
+        answerable only from an application log.
       parameters:
       - in: path
         name: id

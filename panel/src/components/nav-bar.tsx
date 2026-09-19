@@ -9,7 +9,7 @@ import { BrandLockup } from "@/components/brand";
 import { LiveBadge } from "@/components/live-sync";
 import { ChangePasswordForm } from "@/components/staff-manager";
 import { api } from "@/lib/client-api";
-import type { JobStats, StaffUser } from "@/types/api";
+import type { Compliance, JobStats, StaffUser } from "@/types/api";
 
 type NavLink = { href: string; label: string; icon: ReactNode };
 
@@ -79,6 +79,19 @@ export function NavBar({ user }: { user: StaffUser }) {
   const live = stats.data?.open_total ?? 0;
   const onShift = stats.data?.drivers_online ?? 0;
 
+  /*
+   * A technician waiting on approval sees nothing in their app but a wait, and
+   * has no way to hurry anybody along. Nothing else in the panel would say they
+   * were there, so the rail carries it — the same cache entry the drivers page
+   * uses, which LiveSync already refreshes on every driver event.
+   */
+  const compliance = useQuery({
+    queryKey: ["compliance"],
+    queryFn: () => api<Compliance>("/drivers/compliance"),
+    refetchInterval: 60_000,
+  });
+  const awaitingApproval = compliance.data?.counts.pending ?? 0;
+
   return (
     <aside className="border-b border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
       <div className="flex items-center gap-3 px-4 py-3.5 lg:px-5">
@@ -123,6 +136,7 @@ export function NavBar({ user }: { user: StaffUser }) {
             {group.links.map((link) => {
               const active = pathname.startsWith(link.href);
               const alarm = link.href === "/jobs" && unclaimed > 0;
+              const waiting = link.href === "/drivers" && awaitingApproval > 0;
               return (
                 <Link
                   key={link.href}
@@ -149,6 +163,21 @@ export function NavBar({ user }: { user: StaffUser }) {
                       title={`${unclaimed} waiting for a driver`}
                     >
                       {unclaimed}
+                    </span>
+                  ) : null}
+                  {/*
+                   * Amber rather than red: an approval left overnight costs a
+                   * technician a shift, not a customer a rescue, and only one
+                   * thing on this rail is allowed to read as an emergency.
+                   */}
+                  {waiting ? (
+                    <span
+                      className="rounded-full bg-warning/20 px-1.5 py-0.5 text-xs font-semibold leading-none text-warning tabular-nums"
+                      title={`${awaitingApproval} technician${
+                        awaitingApproval === 1 ? "" : "s"
+                      } waiting for approval`}
+                    >
+                      {awaitingApproval}
                     </span>
                   ) : null}
                 </Link>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../core/api_exception.dart';
@@ -259,13 +260,29 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           if (driver.missingDocuments.isNotEmpty)
             InlineNotice.warning('Still outstanding: ${driver.missingDocuments.join(', ')}.')
           else if (!driver.isApproved)
-            const InlineNotice.info('All in. Approval is with the office.')
+            const InlineNotice.info(
+              'All in. Your account is now with the office for approval — you will '
+              'be able to accept shifts as soon as they approve it.',
+            )
           else
             InlineNotice(
               'Approved — you can go on shift.',
               tone: palette.success,
               icon: Icons.check_circle_outline,
             ),
+
+          // A cold start with paperwork outstanding is *redirected* here, so
+          // there is no back button to leave by. Somebody who finishes the last
+          // step then sits on a completed form with nowhere to go, and never
+          // sees the screen that explains what they are now waiting for.
+          if (driver.onboardingComplete) ...<Widget>[
+            const SizedBox(height: Space.lg),
+            FilledButton.icon(
+              onPressed: () => context.go('/'),
+              icon: const Icon(Icons.arrow_forward, size: 19),
+              label: Text(driver.isApproved ? 'Go to my shift' : 'See where I stand'),
+            ),
+          ],
         ],
       ),
     );

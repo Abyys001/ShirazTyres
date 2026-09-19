@@ -9,6 +9,22 @@ import '../models/offer.dart';
 import 'api.dart';
 import 'auth.dart';
 
+/// Whether the API will answer this driver's dispatch endpoints at all.
+///
+/// Offers, the open board, the job list and the price list all sit behind
+/// `IsApprovedDriver`, so a technician who has signed in but has not been
+/// approved yet is refused by every one of them. Asking anyway turned an
+/// ordinary "not yet" into `Could not load offers` on the shift screen — a
+/// failure to report, with a Try again button that could never work, in place
+/// of the one sentence that explains the wait.
+///
+/// So nothing is asked for until the answer can be anything but no. It is a
+/// `watch`, which means the lists rebuild and fetch themselves the moment the
+/// office approves the driver, without the app being reopened.
+final canTakeWorkProvider = Provider<bool>(
+  (ref) => ref.watch(currentDriverProvider)?.isApproved ?? false,
+);
+
 /// The two lists a shift is built on, which keep themselves current the same
 /// way: rebuilt whenever the socket says something changed, and polled slowly as
 /// a backstop for a dropped connection.
@@ -27,6 +43,12 @@ abstract class _LiveListController<T> extends AsyncNotifier<List<T>> {
   @override
   Future<List<T>> build() async {
     _gone = false;
+
+    // Nothing to poll for and nothing to listen to: an unapproved driver is
+    // sent no offers, and the board is not theirs to see yet. An empty list
+    // rather than an error, because that is what is true.
+    if (!ref.watch(canTakeWorkProvider)) return <T>[];
+
     final socket = ref.watch(driverSocketProvider);
     final subscription = socket.events.listen((event) {
       if (wants('${event['event']}')) unawaited(refresh());
@@ -55,6 +77,9 @@ abstract class _LiveListController<T> extends AsyncNotifier<List<T>> {
   /// A refresh may correct the list; it must never replace a good one with an
   /// error because one poll could not reach the API mid-shift.
   Future<void> refresh() async {
+    // Pull-to-refresh reaches the controllers directly, so the gate in [build]
+    // is not enough on its own.
+    if (!ref.read(canTakeWorkProvider)) return;
     final result = await AsyncValue.guard(fetch);
     if (_gone) return;
     if (result.hasError && state.hasValue) return;
@@ -133,6 +158,7 @@ final driverSocketProvider = Provider<OfferSocket>((ref) {
 /// The job in hand. A technician has at most one by default (`drivers.max_concurrent_jobs`).
 final currentJobProvider = FutureProvider<Job?>((ref) async {
   ref.watch(jobRevisionProvider);
+  if (!ref.watch(canTakeWorkProvider)) return null;
   final page = await ref.read(jobApiProvider).jobs();
   for (final job in page.results) {
     if (job.isLive) return job;
@@ -145,6 +171,7 @@ final jobRevisionProvider = StateProvider<int>((ref) => 0);
 
 final jobHistoryProvider = FutureProvider<List<Job>>((ref) async {
   ref.watch(jobRevisionProvider);
+  if (!ref.watch(canTakeWorkProvider)) return const <Job>[];
   final page = await ref.read(jobApiProvider).jobs(status: 'completed');
   return page.results;
 });
@@ -154,9 +181,10 @@ final jobProvider = FutureProvider.family<Job, int>((ref, id) {
   return ref.read(jobApiProvider).job(id);
 });
 
-final priceListProvider = FutureProvider<List<ServiceItem>>(
-  (ref) => ref.read(jobApiProvider).priceList(),
-);
+final priceListProvider = FutureProvider<List<ServiceItem>>((ref) async {
+  if (!ref.watch(canTakeWorkProvider)) return const <ServiceItem>[];
+  return ref.read(jobApiProvider).priceList();
+});
 
 /// One place for every write, so nothing forgets to invalidate.
 class JobActions {

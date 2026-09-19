@@ -51,6 +51,23 @@ class Driver {
 
   bool get isApproved => verificationStatus == 'approved';
   bool get isSuspended => verificationStatus == 'suspended';
+  bool get isRejected => verificationStatus == 'rejected';
+
+  /// Registered, but not yet let into the dispatch pool. The default standing of
+  /// every driver who has just signed in for the first time — section 8.2.
+  bool get isPending => verificationStatus == 'pending';
+
+  /// Everything asked of the driver is done and the decision is the office's.
+  ///
+  /// The difference between this and [isPending] is the whole of what the shift
+  /// screen has to say: one is a job for the technician, the other is a job for
+  /// a manager, and telling somebody to "finish your paperwork" when there is
+  /// none left to finish is how an approval gets waited on twice.
+  bool get awaitingReview => isPending && onboardingComplete;
+
+  /// Uploaded documents nobody has reviewed yet.
+  int get documentsInReview =>
+      documents.where((document) => document.status == 'pending').length;
 
   DriverVehicle? get van =>
       vehicles.isEmpty ? null : vehicles.firstWhere((v) => v.isPrimary, orElse: () => vehicles.first);

@@ -32,8 +32,15 @@ export default function DriverPage() {
   const id = Number(params.id);
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
+  const [confirming, setConfirming] = useState<"suspended" | "rejected" | null>(null);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["driver", id] });
+  // The roster, the approval queue and the rail's waiting badge all read the
+  // same standing, so a decision taken here has to move every one of them.
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["driver", id] });
+    void queryClient.invalidateQueries({ queryKey: ["drivers"] });
+    void queryClient.invalidateQueries({ queryKey: ["compliance"] });
+  };
 
   const driver = useQuery({
     queryKey: ["driver", id],
@@ -60,6 +67,7 @@ export default function DriverPage() {
       }),
     onSuccess: () => {
       setNote("");
+      setConfirming(null);
       void refresh();
     },
   });
@@ -83,6 +91,7 @@ export default function DriverPage() {
   if (driver.isError || !driver.data) return <EmptyState>Could not load this driver.</EmptyState>;
 
   const data = driver.data;
+  const blocked = data.missing_documents.length > 0;
 
   return (
     <div className="space-y-6">
@@ -199,28 +208,88 @@ export default function DriverPage() {
         </div>
 
         <div className="space-y-6">
-          <Card title="Verification">
-            <p className="mb-3 text-xs text-ink-muted">
-              Only approved drivers enter the dispatch pool (section 8.2), and approval is refused while a
-              required document is missing.
-            </p>
-            {data.missing_documents.length > 0 ? (
-              <p className="mb-3 text-xs text-brand">Outstanding: {data.missing_documents.join(", ")}</p>
-            ) : null}
-            <Field label="Note">
-              <Input value={note} onChange={(event) => setNote(event.target.value)} />
-            </Field>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => setVerification.mutate("approved")}>
-                Approve
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setVerification.mutate("suspended")}>
-                Suspend
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setVerification.mutate("rejected")}>
-                Reject
-              </Button>
+          {/*
+            * The standing, and what changing it costs. Three identical buttons
+            * in a row treated "approve" and "reject" as the same kind of act;
+            * they are not, and the one that ends somebody's employment should
+            * not be a mis-tap away from the one that starts it.
+            */}
+          <Card title="Standing">
+            <div className="mb-3 flex items-center gap-2">
+              <VerificationBadge status={data.verification_status} label={data.status_display} />
+              {data.verification_status === "approved" ? (
+                <span className="text-xs text-ink-subtle">since {formatDateTime(data.approved_at)}</span>
+              ) : null}
             </div>
+
+            <p className="mb-3 text-xs text-ink-muted">
+              Only approved drivers enter the dispatch pool (section 8.2). Until then their app shows them
+              a wait and no jobs at all, so this is the decision they are held up on.
+            </p>
+
+            {blocked ? (
+              <p className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                Approval is refused while a required document is outstanding. Accept these first:{" "}
+                {data.missing_documents.join(", ")}.
+              </p>
+            ) : null}
+
+            <Field label="Note" hint="The technician reads this in their app.">
+              <Input
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder={data.verification_status === "approved" ? "Why this is changing" : "Optional"}
+              />
+            </Field>
+
+            <div className="mt-3 space-y-2">
+              {data.verification_status === "approved" ? null : (
+                <Button
+                  className="w-full"
+                  disabled={blocked || setVerification.isPending}
+                  onClick={() => setVerification.mutate("approved")}
+                >
+                  {setVerification.isPending ? "Working…" : "Approve for dispatch"}
+                </Button>
+              )}
+
+              {confirming ? (
+                <div className="space-y-2 rounded-md border border-line-strong p-3">
+                  <p className="text-sm">
+                    {confirming === "suspended"
+                      ? "Suspend this driver? They come off shift immediately and are offered no further work."
+                      : "Reject this driver? They keep their sign-in but are never offered work."}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={setVerification.isPending}
+                      onClick={() => setVerification.mutate(confirming)}
+                    >
+                      Yes, {confirming === "suspended" ? "suspend" : "reject"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {data.verification_status === "suspended" ? null : (
+                    <Button size="sm" variant="secondary" onClick={() => setConfirming("suspended")}>
+                      Suspend
+                    </Button>
+                  )}
+                  {data.verification_status === "rejected" ? null : (
+                    <Button size="sm" variant="ghost" onClick={() => setConfirming("rejected")}>
+                      Reject
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
             {setVerification.isError ? <ErrorNote>{setVerification.error.message}</ErrorNote> : null}
           </Card>
 

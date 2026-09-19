@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/formatters.dart';
 import '../core/theme.dart';
+import '../providers/auth.dart';
 import '../providers/jobs.dart';
 import '../widgets/message_view.dart';
 import '../widgets/ui_kit.dart';
@@ -16,6 +17,22 @@ class HistoryScreen extends ConsumerWidget {
     final palette = context.palette;
     final jobs = ref.watch(jobHistoryProvider);
     final theme = Theme.of(context);
+    final driver = ref.watch(currentDriverProvider);
+
+    // An unapproved technician has no job list to be empty — they have not been
+    // let near the work yet. "Nothing here yet" would read as a list that failed
+    // to arrive rather than as the wait it is.
+    if (driver != null && !driver.isApproved) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Completed jobs')),
+        body: MessageView(
+          title: driver.awaitingReview ? 'Waiting for approval' : 'Not on shift yet',
+          message: 'Jobs you finish show up here with their invoice. '
+              '${driver.awaitingReview ? 'The office is reviewing your account.' : 'Finish setting up to be approved.'}',
+          icon: Icons.hourglass_empty,
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Completed jobs')),
