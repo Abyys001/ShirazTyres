@@ -94,9 +94,10 @@ land?". Both apps also build for the web, into the panel's own static files:
 make web-apps    # scripts/build_web_apps.sh
 ```
 
-The panel then lists every surface — technician app, customer app, customer
-website, booking widget — on **Apps**, each with an Open button and the numbers
-to sign in with. The builds are served same-origin by the panel, at
+The panel then lists every surface — technician app, customer app and the
+customer website at <https://shiraztyres.co.uk/> — on **Apps**, each with an
+Open button and the numbers to sign in with. The builds are served same-origin
+by the panel, at
 <http://localhost:3010/apps/driver/index.html> and
 <http://localhost:3010/apps/customer/index.html>,
 and they talk to the same API as everything else. The development sign-in panel

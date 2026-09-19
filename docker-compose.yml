@@ -76,8 +76,9 @@ services:
       API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://backend:8000/api/v1}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
       NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000/ws}
-      # Where the panel's Apps page sends you for the customer site. It is the
-      # published port, not the compose one — the link opens in your browser.
+      # The customer site's public address. The Apps page links to the live
+      # site at https://shiraztyres.co.uk/; this stays for local links that
+      # need the published port, not the compose one.
       NEXT_PUBLIC_WEBSITE_URL: ${NEXT_PUBLIC_WEBSITE_URL:-http://localhost:3001}
       # Without these the map draws pins on an empty background — section 10.1.
       NEXT_PUBLIC_MAP_TILE_URL: ${MAP_TILE_URL:-}
